@@ -1,19 +1,139 @@
 {
   "type": "object",
-  "title": "extractor configuration",
+  "title": "Daktela Extractor Configuration",
   "required": [
-    "print_hello"
+    "connection",
+    "data_selection",
+    "destination"
   ],
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
+    "connection": {
+      "type": "object",
+      "title": "Connection",
+      "required": [
+        "server",
+        "username",
+        "#password"
+      ],
+      "properties": {
+        "server": {
+          "type": "string",
+          "title": "Server",
+          "description": "Daktela server identifier (e.g., 'mycompany' for mycompany.daktela.com)",
+          "propertyOrder": 1
+        },
+        "username": {
+          "type": "string",
+          "title": "Username",
+          "description": "Daktela account username",
+          "propertyOrder": 2
+        },
+        "#password": {
+          "type": "string",
+          "title": "Password",
+          "description": "Daktela account password (encrypted)",
+          "format": "password",
+          "propertyOrder": 3
+        },
+        "verify_ssl": {
+          "type": "boolean",
+          "title": "Verify SSL Certificates",
+          "description": "Enable SSL certificate verification. Disable only for testing with self-signed certificates. WARNING: Disabling SSL verification is insecure.",
+          "format": "checkbox",
+          "default": true,
+          "propertyOrder": 4
+        }
+      },
       "propertyOrder": 1
+    },
+    "data_selection": {
+      "type": "object",
+      "title": "Data Selection",
+      "required": [
+        "date_from",
+        "date_to",
+        "tables"
+      ],
+      "properties": {
+        "date_from": {
+          "type": "string",
+          "title": "Date From",
+          "description": "Start date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
+          "default": "7 days ago",
+          "propertyOrder": 1
+        },
+        "date_to": {
+          "type": "string",
+          "title": "Date To",
+          "description": "End date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
+          "default": "today",
+          "propertyOrder": 2
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "contacts",
+              "activities",
+              "activities_statuses",
+              "activities_email",
+              "tickets",
+              "users"
+            ],
+            "type": "string"
+          },
+          "title": "Tables to Sync",
+          "format": "select",
+          "options": {
+            "tags": true
+          },
+          "description": "List of tables to extract.",
+          "uniqueItems": true,
+          "propertyOrder": 3
+        }
+      },
+      "propertyOrder": 2
+    },
+    "destination": {
+      "type": "object",
+      "title": "Destination",
+      "properties": {
+        "incremental": {
+          "type": "boolean",
+          "title": "Incremental Load",
+          "format": "checkbox",
+          "description": "If enabled, new data will be appended to existing data and state will be saved for the next run. If disabled, existing data will be replaced.",
+          "default": false,
+          "propertyOrder": 1
+        },
+        "batch_size": {
+          "type": "integer",
+          "title": "Batch Size",
+          "description": "Number of records to process in each batch. Higher values use more memory but may be faster.",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 100000,
+          "propertyOrder": 2
+        },
+        "max_concurrent_requests": {
+          "type": "integer",
+          "title": "Max Concurrent Requests",
+          "description": "Maximum number of concurrent API requests. Lower this value if experiencing rate limiting.",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "propertyOrder": 3
+        }
+      },
+      "propertyOrder": 3
     },
     "debug": {
       "type": "boolean",
-      "title": "Debug",
-      "propertyOrder": 2
+      "title": "Debug Mode",
+      "format": "checkbox",
+      "description": "If enabled, the component will produce detailed logs",
+      "default": false,
+      "propertyOrder": 4
     }
   }
 }

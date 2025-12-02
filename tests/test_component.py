@@ -1,21 +1,144 @@
-import os
+import sys
 import unittest
+from pathlib import Path
 
-import mock
-from freezegun import freeze_time
+from keboola.component.exceptions import UserException
 
-from component import Component
+from configuration import Configuration
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 
-class TestComponent(unittest.TestCase):
-    # set global time to 2010-10-10 - affects functions like datetime.now()
-    @freeze_time("2010-10-10")
-    # set KBC_DATADIR env to non-existing dir
-    @mock.patch.dict(os.environ, {"KBC_DATADIR": "./non-existing-dir"})
-    def test_run_no_cfg_fails(self):
-        with self.assertRaises(ValueError):
-            comp = Component()
-            comp.run()
+class TestConfiguration(unittest.TestCase):
+    """Test configuration validation."""
+
+    def test_valid_configuration(self):
+        """Test valid configuration parameters."""
+        config = Configuration(
+            connection={
+                "server": "demo",
+                "username": "test_user",
+                "#password": "test_password"
+            },
+            data_selection={
+                "date_from": "-7",
+                "date_to": "today",
+                "tables": ["contacts", "activities"]
+            }
+        )
+
+        self.assertEqual(config.connection.username, "test_user")
+        self.assertEqual(config.connection.server, "demo")
+        self.assertEqual(config.url, "https://demo.daktela.com")
+        self.assertEqual(len(config.data_selection.tables), 2)
+
+    def test_url_construction_from_server(self):
+        """Test URL is constructed from server parameter."""
+        config = Configuration(
+            connection={
+                "server": "mycompany",
+                "username": "test",
+                "#password": "test"
+            },
+            data_selection={
+                "date_from": "-7",
+                "date_to": "today",
+                "tables": ["contacts"]
+            }
+        )
+
+        self.assertEqual(config.url, "https://mycompany.daktela.com")
+        self.assertEqual(config.connection.server, "mycompany")
+
+    def test_url_validation(self):
+        """Test URL validation fails for invalid URLs."""
+        with self.assertRaises(UserException):
+            Configuration(
+                connection={
+                    "username": "test",
+                    "#password": "test",
+                    "url": "https://invalid.com"  # Invalid - should be 'server' not 'url'
+                },
+                data_selection={
+                    "date_from": "-7",
+                    "date_to": "today",
+                    "tables": ["contacts"]
+                }
+            )
+
+    def test_missing_url_and_server(self):
+        """Test validation fails when server is missing."""
+        with self.assertRaises(UserException):
+            Configuration(
+                connection={
+                    "username": "test",
+                    "#password": "test"
+                    # Missing required 'server' field
+                },
+                data_selection={
+                    "date_from": "-7",
+                    "date_to": "today",
+                    "tables": ["contacts"]
+                }
+            )
+
+    def test_date_validation(self):
+        """Test date validation."""
+        # Valid dates
+        config = Configuration(
+            connection={
+                "server": "demo",
+                "username": "test",
+                "#password": "test"
+            },
+            data_selection={
+                "date_from": "2024-01-01",
+                "date_to": "2024-01-10",
+                "tables": ["contacts"]
+            }
+        )
+        self.assertIsNotNone(config.data_selection.date_from)
+        self.assertIsNotNone(config.data_selection.date_to)
+
+    def test_date_formats(self):
+        """Test various date formats."""
+        # Today
+        config = Configuration(
+            connection={
+                "server": "demo",
+                "username": "test",
+                "#password": "test"
+            },
+            data_selection={
+                "date_from": "-7",
+                "date_to": "today",
+                "tables": ["contacts"]
+            }
+        )
+        self.assertIsNotNone(config.data_selection.date_from)
+        self.assertIsNotNone(config.data_selection.date_to)
+
+    def test_tables_list_parsing(self):
+        """Test table list parsing."""
+        config = Configuration(
+            connection={
+                "server": "demo",
+                "username": "test",
+                "#password": "test"
+            },
+            data_selection={
+                "date_from": "-7",
+                "date_to": "today",
+                "tables": ["contacts", "activities", "tickets"]
+            }
+        )
+
+        tables = config.data_selection.tables
+        self.assertEqual(len(tables), 3)
+        self.assertIn("contacts", tables)
+        self.assertIn("activities", tables)
+        self.assertIn("tickets", tables)
 
 
 if __name__ == "__main__":

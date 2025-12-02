@@ -1,12 +1,42 @@
 import logging
 
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, computed_field
+
+DEFAULT_MAX_CONCURRENT_REQUESTS = 10  # Default maximum number of concurrent API requests
+
+DEFAULT_BATCH_SIZE = 10000  # Default batch size for processing records before writing to CSV
+
+
+class Connection(BaseModel):
+    """Connection configuration."""
+
+    server: str
+    username: str
+    password: str = Field(alias="#password")
+    verify_ssl: bool = True
+
+
+class DataSelection(BaseModel):
+    """Data selection configuration."""
+
+    date_from: str
+    date_to: str
+    tables: list[str]
+
+
+class Destination(BaseModel):
+    """Destination configuration."""
+
+    incremental: bool = False
+    batch_size: int = DEFAULT_BATCH_SIZE
+    max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_REQUESTS
 
 
 class Configuration(BaseModel):
-    print_hello: bool
-    api_token: str = Field(alias="#api_token")
+    connection: Connection
+    data_selection: DataSelection
+    destination: Destination = Field(default_factory=Destination)
     debug: bool = False
 
     def __init__(self, **data):
@@ -19,8 +49,8 @@ class Configuration(BaseModel):
         if self.debug:
             logging.debug("Component will run in Debug mode")
 
-    @field_validator("api_token")
-    def token_must_be_uppercase(cls, v):
-        if not v.isupper():
-            raise UserException("API token must be uppercase")
-        return v
+    @computed_field
+    @property
+    def url(self) -> str:
+        """Build URL from server name."""
+        return f"https://{self.connection.server}.daktela.com"

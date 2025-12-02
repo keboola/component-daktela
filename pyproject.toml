@@ -7,9 +7,10 @@ dependencies = [
     "flake8>=7.2.0",
     "freezegun>=1.5.1",
     "keboola-component>=1.6.10",
-    "keboola-http-client>=1.0.1",
+    "keboola-http-client>=1.2.0",
     "keboola-utils>=1.1.0",
     "mock>=5.2.0",
     "pydantic>=2.11.3",
+    "requests>=2.31.0",
     "ruff>=0.11.5",
 ]

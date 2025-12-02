@@ -1,103 +1,248 @@
 """
-Template Component main class.
-
+Daktela Extractor Component main class.
 """
 
+import asyncio
 import csv
+import json
 import logging
-from datetime import datetime
+import sys
+import traceback
+import keboola.utils
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
 
 from configuration import Configuration
+from daktela_client import DaktelaApiClient
+from extractor import DaktelaExtractor
 
 
 class Component(ComponentBase):
     """
-    Extends base class for general Python components. Initializes the CommonInterface
-    and performs configuration validation.
+    Daktela Extractor Component.
 
-    For easier debugging the data folder is picked up by default from `../data` path,
-    relative to working directory.
-
-    If `debug` parameter is present in the `config.json`, the default logger is set to verbose DEBUG mode.
+    Extracts data from Daktela CRM/Contact Center API v6 and produces CSV outputs
+    compatible with Keboola storage.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
+        self.params: Optional[Configuration] = None
+        self._table_definitions: Dict[str, Any] = {}
 
-    def run(self):
-        """
-        Main execution code
-        """
+    def run(self) -> None:
+        """Main execution - orchestrates the component workflow."""
+        try:
+            self.params = self._validate_and_get_configuration()
 
-        # ####### EXAMPLE TO REMOVE
-        # check for missing configuration parameters
+            # Apply state for incremental processing
+            self._apply_state()
+
+            # Run async extraction
+            asyncio.run(self._run_async_extraction())
+
+            # Save state after successful extraction
+            self._save_state()
+
+            logging.info("Daktela extraction completed successfully")
+
+        except UserException as err:
+            logging.error(f"Configuration/API error: {err}")
+            print(err, file=sys.stderr)
+            sys.exit(1)
+
+        except Exception:
+            logging.exception("Unhandled error in component execution")
+            traceback.print_exc(file=sys.stderr)
+            sys.exit(2)
+
+    async def _run_async_extraction(self) -> None:
+        """Run the async extraction process."""
+        # Use async context manager for API client (auth happens in __init__)
+        async with self._initialize_api_client() as api_client:
+            table_configs = self._load_table_configurations()
+            extractor = self._create_extractor(api_client, table_configs)
+            await extractor.extract_all()
+
+    def _validate_and_get_configuration(self) -> Configuration:
+        """Load and validate configuration parameters."""
         params = Configuration(**self.configuration.parameters)
 
-        # Access parameters in configuration
-        if params.print_hello:
-            logging.info("Hello World")
+        logging.info(f"Starting Daktela extraction from {params.connection.server}")
+        logging.info(f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}")
+        logging.info(f"Tables to extract: {params.data_selection.tables}")
+        logging.info(f"Incremental mode: {params.destination.incremental}")
 
-        # get input table definitions
-        input_tables = self.get_input_tables_definitions()
-        for table in input_tables:
-            logging.info(f"Received input table: {table.name} with path: {table.full_path}")
+        return params
 
-        if len(input_tables) == 0:
-            raise UserException("No input tables found")
+    def _initialize_api_client(self) -> DaktelaApiClient:
+        """Initialize and return configured API client (authenticates during init)."""
+        params = self._require_params()
+        return DaktelaApiClient(
+            url=params.url,
+            username=params.connection.username,
+            password=params.connection.password,
+            max_concurrent=params.destination.max_concurrent_requests,
+            verify_ssl=params.connection.verify_ssl,
+        )
 
-        # get last state data/in/state.json from previous run
-        previous_state = self.get_state_file()
-        logging.info(previous_state.get("some_parameter"))
+    def _load_table_configurations(self) -> Dict[str, Any]:
+        """Load table configurations from JSON file."""
+        config_file = Path(__file__).parent / "table_definitions.json"
+        try:
+            with open(config_file, "r") as f:
+                table_configs = json.load(f)
+            logging.info(f"Loading table definitions from {config_file}")
+            return table_configs
+        except FileNotFoundError:
+            raise UserException(f"Table definitions file not found: {config_file}")
+        except json.JSONDecodeError as e:
+            raise UserException(f"Invalid JSON in table definitions file: {e}")
 
-        # Create output table (Table definition - just metadata)
-        table = self.create_out_table_definition("output.csv", incremental=True, primary_key=["timestamp"])
+    def _create_extractor(
+        self,
+        api_client: DaktelaApiClient,
+        table_configs: Dict[str, Any],
+    ) -> DaktelaExtractor:
+        """Create and configure the extractor."""
+        params = self._require_params()
 
-        # get file path of the table (data/out/tables/Features.csv)
-        out_table_path = table.full_path
-        logging.info(out_table_path)
+        # Parse dates using keboola utils
+        from_datetime = keboola.utils.get_past_date(params.data_selection.date_from).strftime("%Y-%m-%d %H:%M:%S")
+        to_datetime = keboola.utils.get_past_date(params.data_selection.date_to).strftime("%Y-%m-%d %H:%M:%S")
 
-        # Add timestamp column and save into out_table_path
-        input_table = input_tables[0]
-        with (
-            open(input_table.full_path, "r") as inp_file,
-            open(table.full_path, mode="wt", encoding="utf-8", newline="") as out_file,
-        ):
-            reader = csv.DictReader(inp_file)
+        return DaktelaExtractor(
+            api_client=api_client,
+            table_configs=table_configs,
+            component=self,
+            server=params.connection.server,
+            incremental=params.destination.incremental,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+            requested_tables=params.data_selection.tables,
+            batch_size=params.destination.batch_size,
+        )
 
-            columns = list(reader.fieldnames)
-            # append timestamp
-            columns.append("timestamp")
+    def _apply_state(self) -> None:
+        """Apply state for incremental processing."""
+        params = self._require_params()
+        if params.destination.incremental:
+            state = self.get_state_file()
+            last_timestamp = state.get("last_timestamp")
 
-            # write result with column added
-            writer = csv.DictWriter(out_file, fieldnames=columns)
-            writer.writeheader()
-            for in_row in reader:
-                in_row["timestamp"] = datetime.now().isoformat()
-                writer.writerow(in_row)
+            if last_timestamp:
+                logging.info(f"Incremental load: using last_timestamp={last_timestamp} as date_from")
+                # Override date_from with last successful run timestamp
+                params.data_selection.date_from = last_timestamp
+            else:
+                logging.info("Incremental load: no previous state found, performing full extraction")
 
-        # Save table manifest (output.csv.manifest) from the Table definition
-        self.write_manifest(table)
+    def _save_state(self) -> None:
+        """Save state after successful extraction."""
+        params = self._require_params()
+        if params.destination.incremental:
+            current_timestamp = datetime.now(timezone.utc).isoformat()
+            state = {
+                "last_timestamp": current_timestamp,
+                "tables_extracted": params.data_selection.tables,
+                "server": params.connection.server,
+            }
 
-        # Write new state - will be available next run
-        self.write_state_file({"some_state_parameter": "value"})
+            self.write_state_file(state)
+            logging.info(f"Saved state: last_timestamp={current_timestamp}")
 
-        # ####### EXAMPLE TO REMOVE END
+    def write_table_data(
+        self,
+        table_name: str,
+        records: List[Dict[str, Any]],
+        table_config: Dict[str, Any],
+        incremental: bool,
+        columns: List[str],
+    ) -> None:
+        """
+        Write table data using create_out_table_definition and write_manifest pattern.
+
+        Args:
+            table_name: Name of the output table (e.g., "server_tablename.csv")
+            records: List of records to write
+            table_config: Table configuration dict
+            incremental: Whether to use incremental mode
+            columns: List of column names
+        """
+        table_definitions = self._get_table_definitions()
+
+        # Create table definition on first write
+        if table_name not in table_definitions:
+            out_table = self.create_out_table_definition(
+                table_name,
+                columns=columns,
+                primary_key=table_config.get("manifest_primary_key", ["id"]),
+                incremental=incremental,
+            )
+
+            table_definitions[table_name] = out_table
+
+            # Write header
+            with open(out_table.full_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=columns)
+                writer.writeheader()
+
+            logging.info(f"Created table definition for {table_name} with {len(columns)} columns")
+
+        # Get table definition
+        out_table = table_definitions.get(table_name)
+
+        if not out_table:
+            raise UserException(f"Table definition not found for {table_name}. This should not happen.")
+
+        # Append records
+        if records:
+            with open(out_table.full_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+                for record in records:
+                    # Ensure all columns are present
+                    row = {col: record.get(col) for col in columns}
+                    writer.writerow(row)
+
+            logging.info(f"Wrote {len(records)} records to {table_name}")
+
+    def finalize_table(self, table_name: str) -> None:
+        """
+        Finalize table by writing manifest.
+
+        Args:
+            table_name: Name of the output table
+        """
+        out_table = self._get_table_definitions().get(table_name)
+
+        if out_table:
+            self.write_manifest(out_table)
+            logging.info(f"Wrote manifest for {table_name}")
+        else:
+            logging.warning(f"No table definition found for {table_name}, skipping manifest")
+
+    def _get_table_definitions(self) -> Dict[str, Any]:
+        """Return initialized table definitions container."""
+        if not hasattr(self, "_table_definitions"):
+            self._table_definitions = {}
+        return self._table_definitions
+
+    def _require_params(self) -> Configuration:
+        """Return initialized configuration or raise if missing."""
+        if not self.params:
+            raise UserException("Component parameters are not initialized.")
+        return self.params
 
 
 """
-        Main entrypoint
+Main entrypoint
 """
 if __name__ == "__main__":
-    try:
-        comp = Component()
-        # this triggers the run method by default and is controlled by the configuration.action parameter
-        comp.execute_action()
-    except UserException as exc:
-        logging.exception(exc)
-        exit(1)
-    except Exception as exc:
-        logging.exception(exc)
-        exit(2)
+    comp = Component()
+    # this triggers the run method by default and is controlled by the configuration.action parameter
+    # Error handling is done in the run() method
+    comp.execute_action()

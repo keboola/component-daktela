@@ -4,13 +4,11 @@ Daktela Extractor Component main class.
 
 import asyncio
 import csv
-import json
 import logging
 import sys
 import traceback
 import keboola.utils
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from keboola.component.base import ComponentBase
@@ -64,8 +62,7 @@ class Component(ComponentBase):
         """Run the async extraction process."""
         # Use async context manager for API client (auth happens in __init__)
         async with self._initialize_api_client() as api_client:
-            table_configs = self._load_table_configurations()
-            extractor = self._create_extractor(api_client, table_configs)
+            extractor = self._create_extractor(api_client)
             await extractor.extract_all()
 
     def _validate_and_get_configuration(self) -> Configuration:
@@ -90,23 +87,9 @@ class Component(ComponentBase):
             verify_ssl=params.connection.verify_ssl,
         )
 
-    def _load_table_configurations(self) -> Dict[str, Any]:
-        """Load table configurations from JSON file."""
-        config_file = Path(__file__).parent / "table_definitions.json"
-        try:
-            with open(config_file, "r") as f:
-                table_configs = json.load(f)
-            logging.info(f"Loading table definitions from {config_file}")
-            return table_configs
-        except FileNotFoundError:
-            raise UserException(f"Table definitions file not found: {config_file}")
-        except json.JSONDecodeError as e:
-            raise UserException(f"Invalid JSON in table definitions file: {e}")
-
     def _create_extractor(
         self,
         api_client: DaktelaApiClient,
-        table_configs: Dict[str, Any],
     ) -> DaktelaExtractor:
         """Create and configure the extractor."""
         params = self._require_params()
@@ -117,7 +100,7 @@ class Component(ComponentBase):
 
         return DaktelaExtractor(
             api_client=api_client,
-            table_configs=table_configs,
+            table_configs={},
             component=self,
             url=params.connection.url,
             incremental=params.destination.incremental,

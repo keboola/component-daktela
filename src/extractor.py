@@ -56,18 +56,14 @@ class DaktelaExtractor:
         """Extract all requested tables asynchronously."""
         logging.info(f"Starting extraction for {len(self.requested_tables)} tables")
 
-        # Create default config for tables not in definitions
-        tables_to_extract = []
+        # Create default config for all tables (endpoints are called directly)
         for table_name in self.requested_tables:
-            if table_name not in self.table_configs:
-                logging.warning(f"Table '{table_name}' not found in configuration. Using default config and calling endpoint directly.")
-                self.table_configs[table_name] = {"primary_keys": ["id"]}
-            tables_to_extract.append(table_name)
+            self.table_configs[table_name] = {"primary_keys": ["id"]}
 
-        if not tables_to_extract:
-            raise UserException("No valid tables to extract")
+        if not self.requested_tables:
+            raise UserException("No tables specified for extraction")
 
-        await self._extract_batch(tables_to_extract)
+        await self._extract_batch(self.requested_tables)
 
         logging.info("Extraction completed successfully")
 

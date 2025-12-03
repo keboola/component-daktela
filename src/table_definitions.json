@@ -6,9 +6,6 @@
     "primary_keys": ["name"],
     "keys": ["user_id"]
   },
-  "activities_statuses": {
-    "primary_keys": ["name"]
-  },
   "activities_email": {
     "primary_keys": ["name"],
     "endpoint": "activitiesEmail"

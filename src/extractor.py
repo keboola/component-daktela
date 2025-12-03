@@ -56,12 +56,12 @@ class DaktelaExtractor:
         """Extract all requested tables asynchronously."""
         logging.info(f"Starting extraction for {len(self.requested_tables)} tables")
 
-        # Filter to only configured tables
+        # Create default config for tables not in definitions
         tables_to_extract = []
         for table_name in self.requested_tables:
             if table_name not in self.table_configs:
-                logging.warning(f"Table '{table_name}' not found in configuration. Skipping.")
-                continue
+                logging.warning(f"Table '{table_name}' not found in configuration. Using default config and calling endpoint directly.")
+                self.table_configs[table_name] = {"primary_keys": ["id"]}
             tables_to_extract.append(table_name)
 
         if not tables_to_extract:
@@ -151,9 +151,10 @@ class DaktelaExtractor:
         """
         filters = {}
 
-        # Add date range filters
-        filters["from"] = self.from_datetime
-        filters["to"] = self.to_datetime
+        # Add date range filters (unless explicitly disabled for this table)
+        if table_config.get("date_filterable", True):
+            filters["from"] = self.from_datetime
+            filters["to"] = self.to_datetime
 
         # Add table-specific filters from config
         config_filters = table_config.get("filters", {})

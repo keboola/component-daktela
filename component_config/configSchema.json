@@ -75,7 +75,7 @@
             "enum": [
               "contacts",
               "activities",
-              "activities_statuses",
+              "statuses",
               "activities_email",
               "tickets",
               "users"
@@ -87,7 +87,7 @@
           "options": {
             "tags": true
           },
-          "description": "List of tables to extract.",
+          "description": "List of tables/endpoints to extract. Common tables: contacts, activities, activities_email, tickets, users. You can also specify any custom endpoint name (e.g., 'statuses' to call /api/v6/statuses).",
           "uniqueItems": true,
           "propertyOrder": 3
         }

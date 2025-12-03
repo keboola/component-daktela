@@ -21,6 +21,7 @@ class DaktelaExtractor:
         table_configs: Dict[str, Any],
         component: "Component",
         url: str,
+        incremental: bool,
         requested_endpoints: List[str],
         batch_size: int = 10000,
     ):
@@ -32,6 +33,7 @@ class DaktelaExtractor:
             table_configs: Dictionary of table configurations
             component: Component instance for writing tables
             url: Base URL (e.g., https://customer.daktela.com)
+            incremental: Whether to use incremental mode
             requested_endpoints: List of endpoint names to extract
             batch_size: Number of records to process in each batch (default: 10000)
         """
@@ -39,6 +41,7 @@ class DaktelaExtractor:
         self.table_configs = table_configs
         self.component = component
         self.url = url
+        self.incremental = incremental
         self.requested_endpoints = requested_endpoints
         self.batch_size = batch_size
         self._table_columns: Dict[str, List[str]] = {}
@@ -150,6 +153,7 @@ class DaktelaExtractor:
             table_name=output_table_name,
             records=records,
             table_config=table_config,
+            incremental=self.incremental,
             columns=self._table_columns[output_table_name],
         )
 

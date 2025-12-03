@@ -7,6 +7,7 @@ import csv
 import logging
 import sys
 import traceback
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from keboola.component.base import ComponentBase
@@ -35,8 +36,14 @@ class Component(ComponentBase):
         try:
             self.params = self._validate_and_get_configuration()
 
+            # Apply state for incremental processing
+            self._apply_state()
+
             # Run async extraction
             asyncio.run(self._run_async_extraction())
+
+            # Save state after successful extraction
+            self._save_state()
 
             logging.info("Daktela extraction completed successfully")
 
@@ -63,6 +70,7 @@ class Component(ComponentBase):
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
         logging.info(f"Endpoints to extract: {params.data_selection.endpoints}")
+        logging.info(f"Incremental mode: {params.destination.incremental}")
 
         return params
 
@@ -89,24 +97,53 @@ class Component(ComponentBase):
             table_configs={},
             component=self,
             url=params.connection.url,
+            incremental=params.destination.incremental,
             requested_endpoints=params.data_selection.endpoints,
             batch_size=params.destination.batch_size,
         )
+
+    def _apply_state(self) -> None:
+        """Apply state for incremental processing."""
+        params = self._require_params()
+        if params.destination.incremental:
+            state = self.get_state_file()
+            last_timestamp = state.get("last_timestamp")
+
+            if last_timestamp:
+                logging.info(f"Incremental load: last run at {last_timestamp}")
+            else:
+                logging.info("Incremental load: no previous state found, performing full extraction")
+
+    def _save_state(self) -> None:
+        """Save state after successful extraction."""
+        params = self._require_params()
+        if params.destination.incremental:
+            current_timestamp = datetime.now(timezone.utc).isoformat()
+            state = {
+                "last_timestamp": current_timestamp,
+                "endpoints_extracted": params.data_selection.endpoints,
+                "url": params.connection.url,
+            }
+
+            self.write_state_file(state)
+            logging.info(f"Saved state: last_timestamp={current_timestamp}")
 
     def write_table_data(
         self,
         table_name: str,
         records: List[Dict[str, Any]],
         table_config: Dict[str, Any],
+        incremental: bool,
         columns: List[str],
     ) -> None:
         """
         Write table data using create_out_table_definition and write_manifest pattern.
 
         Args:
-            table_name: Name of the output table
+            table_name: Name of the output table (e.g., "server_tablename.csv")
             records: List of records to write
             table_config: Table configuration dict
+            incremental: Whether to use incremental mode
             columns: List of column names
         """
         table_definitions = self._get_table_definitions()
@@ -117,7 +154,7 @@ class Component(ComponentBase):
                 table_name,
                 columns=columns,
                 primary_key=table_config.get("manifest_primary_key", ["id"]),
-                incremental=False,
+                incremental=incremental,
             )
 
             table_definitions[table_name] = out_table

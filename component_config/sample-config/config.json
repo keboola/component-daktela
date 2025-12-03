@@ -20,7 +20,6 @@
       "endpoints": ["contacts", "activities", "tickets"]
     },
     "destination": {
-      "incremental": false,
       "batch_size": 10000,
       "max_concurrent_requests": 10
     },

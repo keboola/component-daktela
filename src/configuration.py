@@ -26,7 +26,6 @@ class DataSelection(BaseModel):
 class Destination(BaseModel):
     """Destination configuration."""
 
-    incremental: bool = False
     batch_size: int = DEFAULT_BATCH_SIZE
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_REQUESTS
 

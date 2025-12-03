@@ -7,7 +7,6 @@ import csv
 import logging
 import sys
 import traceback
-import keboola.utils
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -70,7 +69,6 @@ class Component(ComponentBase):
         params = Configuration(**self.configuration.parameters)
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
-        logging.info(f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}")
         logging.info(f"Endpoints to extract: {params.data_selection.endpoints}")
         logging.info(f"Incremental mode: {params.destination.incremental}")
 
@@ -94,18 +92,12 @@ class Component(ComponentBase):
         """Create and configure the extractor."""
         params = self._require_params()
 
-        # Parse dates using keboola utils
-        from_datetime = keboola.utils.get_past_date(params.data_selection.date_from).strftime("%Y-%m-%d %H:%M:%S")
-        to_datetime = keboola.utils.get_past_date(params.data_selection.date_to).strftime("%Y-%m-%d %H:%M:%S")
-
         return DaktelaExtractor(
             api_client=api_client,
             table_configs={},
             component=self,
             url=params.connection.url,
             incremental=params.destination.incremental,
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
             requested_endpoints=params.data_selection.endpoints,
             batch_size=params.destination.batch_size,
         )
@@ -118,9 +110,7 @@ class Component(ComponentBase):
             last_timestamp = state.get("last_timestamp")
 
             if last_timestamp:
-                logging.info(f"Incremental load: using last_timestamp={last_timestamp} as date_from")
-                # Override date_from with last successful run timestamp
-                params.data_selection.date_from = last_timestamp
+                logging.info(f"Incremental load: last run at {last_timestamp}")
             else:
                 logging.info("Incremental load: no previous state found, performing full extraction")
 

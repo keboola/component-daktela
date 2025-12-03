@@ -22,8 +22,6 @@ class DaktelaExtractor:
         component: "Component",
         url: str,
         incremental: bool,
-        from_datetime: str,
-        to_datetime: str,
         requested_endpoints: List[str],
         batch_size: int = 10000,
     ):
@@ -36,8 +34,6 @@ class DaktelaExtractor:
             component: Component instance for writing tables
             url: Base URL (e.g., https://customer.daktela.com)
             incremental: Whether to use incremental mode
-            from_datetime: Start datetime for extraction
-            to_datetime: End datetime for extraction
             requested_endpoints: List of endpoint names to extract
             batch_size: Number of records to process in each batch (default: 10000)
         """
@@ -46,8 +42,6 @@ class DaktelaExtractor:
         self.component = component
         self.url = url
         self.incremental = incremental
-        self.from_datetime = from_datetime
-        self.to_datetime = to_datetime
         self.requested_endpoints = requested_endpoints
         self.batch_size = batch_size
         self._table_columns: Dict[str, List[str]] = {}
@@ -84,11 +78,11 @@ class DaktelaExtractor:
 
         table_config = self.table_configs[table_name]
 
-        # Build filters
-        filters = self._build_filters(table_config)
-
         # Endpoint override support
         endpoint = self._get_table_endpoint(table_name, table_config)
+
+        # Build filters from config
+        filters = table_config.get("filters", {})
 
         # Initialize transformer
         transformer = DataTransformer(table_name, table_config)
@@ -121,30 +115,6 @@ class DaktelaExtractor:
             logging.info(f"Completed extraction for table: {table_name} ({total_records} records)")
         else:
             logging.warning(f"No data found for table: {table_name}")
-
-    def _build_filters(self, table_config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build filters for API request.
-
-        Args:
-            table_config: Table configuration dict
-
-        Returns:
-            Dictionary of filters
-        """
-        filters = {}
-
-        # Add date range filters (unless explicitly disabled for this table)
-        if table_config.get("date_filterable", True):
-            filters["from"] = self.from_datetime
-            filters["to"] = self.to_datetime
-
-        # Add table-specific filters from config
-        config_filters = table_config.get("filters", {})
-        if config_filters:
-            filters.update(config_filters)
-
-        return filters
 
     def _get_columns(self, sample_record: Dict[str, Any]) -> List[str]:
         """

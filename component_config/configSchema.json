@@ -50,25 +50,9 @@
       "type": "object",
       "title": "Data Selection",
       "required": [
-        "date_from",
-        "date_to",
-        "tables"
+        "endpoints"
       ],
       "properties": {
-        "date_from": {
-          "type": "string",
-          "title": "Date From",
-          "description": "Start date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
-          "default": "7 days ago",
-          "propertyOrder": 1
-        },
-        "date_to": {
-          "type": "string",
-          "title": "Date To",
-          "description": "End date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
-          "default": "today",
-          "propertyOrder": 2
-        },
         "endpoints": {
           "type": "array",
           "items": {
@@ -95,7 +79,7 @@
           },
           "description": "List of API endpoints to extract. Common endpoints: contacts, activities, activities_email, tickets, users, statuses. You can specify any valid Daktela API endpoint name (e.g., 'statuses' calls /api/v6/statuses).",
           "uniqueItems": true,
-          "propertyOrder": 3
+          "propertyOrder": 1
         }
       },
       "propertyOrder": 2

@@ -21,8 +21,6 @@ class TestConfiguration(unittest.TestCase):
                 "#password": "test_password"
             },
             data_selection={
-                "date_from": "-7",
-                "date_to": "today",
                 "endpoints": ["contacts", "activities"]
             }
         )
@@ -40,8 +38,6 @@ class TestConfiguration(unittest.TestCase):
                 "#password": "test"
             },
             data_selection={
-                "date_from": "-7",
-                "date_to": "today",
                 "endpoints": ["contacts"]
             }
         )
@@ -64,9 +60,8 @@ class TestConfiguration(unittest.TestCase):
                 }
             )
 
-    def test_date_validation(self):
-        """Test date validation."""
-        # Valid dates
+    def test_endpoints_validation(self):
+        """Test endpoints validation."""
         config = Configuration(
             connection={
                 "url": "https://demo.daktela.com",
@@ -74,31 +69,11 @@ class TestConfiguration(unittest.TestCase):
                 "#password": "test"
             },
             data_selection={
-                "date_from": "2024-01-01",
-                "date_to": "2024-01-10",
                 "endpoints": ["contacts"]
             }
         )
-        self.assertIsNotNone(config.data_selection.date_from)
-        self.assertIsNotNone(config.data_selection.date_to)
-
-    def test_date_formats(self):
-        """Test various date formats."""
-        # Today
-        config = Configuration(
-            connection={
-                "url": "https://demo.daktela.com",
-                "username": "test",
-                "#password": "test"
-            },
-            data_selection={
-                "date_from": "-7",
-                "date_to": "today",
-                "endpoints": ["contacts"]
-            }
-        )
-        self.assertIsNotNone(config.data_selection.date_from)
-        self.assertIsNotNone(config.data_selection.date_to)
+        self.assertIsNotNone(config.data_selection.endpoints)
+        self.assertEqual(len(config.data_selection.endpoints), 1)
 
     def test_endpoints_list_parsing(self):
         """Test endpoints list parsing."""
@@ -109,8 +84,6 @@ class TestConfiguration(unittest.TestCase):
                 "#password": "test"
             },
             data_selection={
-                "date_from": "-7",
-                "date_to": "today",
                 "endpoints": ["contacts", "activities", "tickets"]
             }
         )

@@ -36,9 +36,9 @@ class DataTransformer:
         self.list_of_dicts_columns = table_config.get("list_of_dicts_columns", [])
         self.header_normalizer = DefaultHeaderNormalizer()
 
-    def transform_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def transform_records(self, records: List[Dict[str, Any]]):
         """
-        Transform list of API records into CSV-ready format.
+        Transform list of API records into CSV-ready format (generator).
 
         This method applies a transformation pipeline with the following steps:
         1. Flatten nested JSON structures
@@ -50,10 +50,11 @@ class DataTransformer:
         Args:
             records: List of raw API records
 
-        Returns:
-            List of transformed records ready for CSV output
+        Yields:
+            Transformed records ready for CSV output
         """
-        transformed = []
+        input_count = len(records)
+        output_count = 0
 
         for record in records:
             # Step 1: Flatten nested JSON (up to 2 levels deep)
@@ -73,11 +74,10 @@ class DataTransformer:
                 # Step 5: Add required output columns (id)
                 final_row = self._add_output_columns(sanitized)
 
-                transformed.append(final_row)
+                output_count += 1
+                yield final_row
 
-        logging.info(f"Transformed {len(records)} records into {len(transformed)} rows for table {self.table_name}")
-
-        return transformed
+        logging.info(f"Transformed {input_count} records into {output_count} rows for table {self.table_name}")
 
     def _flatten_json(self, data: Dict[str, Any], parent_key: str = "", level: int = 0) -> Dict[str, Any]:
         """

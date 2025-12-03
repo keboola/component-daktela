@@ -89,25 +89,31 @@ class DaktelaExtractor:
         # Table output name
         output_table_name = f"{table_name}.csv"
 
-        # Fetch and process data in batches
+        # Fetch and process data in pages
         total_records = 0
-        async for batch in self.api_client.fetch_table_data_batched(
+        async for page in self.api_client.fetch_table_data_batched(
             table_name=table_name,
             endpoint=endpoint,
             date_from=self.date_from,
             date_to=self.date_to,
             batch_size=self.batch_size,
         ):
-            if not batch:
+            if not page:
                 continue
 
-            # Transform batch
-            transformed_records = transformer.transform_records(batch)
+            # Transform page records one by one and write in small batches
+            write_batch = []
+            for transformed_record in transformer.transform_records(page):
+                write_batch.append(transformed_record)
 
-            if not transformed_records:
-                continue
+                # Write in batches of 1000 to reduce I/O overhead
+                if len(write_batch) >= 1000:
+                    total_records += self._write_records(output_table_name, table_config, write_batch)
+                    write_batch = []
 
-            total_records += self._write_records(output_table_name, table_config, transformed_records)
+            # Write remaining records from this page
+            if write_batch:
+                total_records += self._write_records(output_table_name, table_config, write_batch)
 
         # Finalize table (write manifest)
         if total_records > 0:

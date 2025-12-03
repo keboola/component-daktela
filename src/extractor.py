@@ -243,6 +243,8 @@ class DaktelaExtractor:
         logging.info(f"Extracting table: {table_name}")
 
         table_config = self.table_configs[table_name]
+        # Force full-field extraction regardless of config
+        table_config_all_fields = {**table_config, "fields": []}
 
         # Check if this is a dependent table
         if self._is_dependent_table(table_name):
@@ -250,13 +252,13 @@ class DaktelaExtractor:
             return
 
         # Build filters
-        filters = self._build_filters(table_config)
+        filters = self._build_filters(table_config_all_fields)
 
         # Endpoint override support
-        endpoint = self._get_table_endpoint(table_name, table_config)
+        endpoint = self._get_table_endpoint(table_name, table_config_all_fields)
 
         # Initialize transformer
-        transformer = DataTransformer(self.server, table_name, table_config)
+        transformer = DataTransformer(self.server, table_name, table_config_all_fields)
 
         # Table output name
         output_table_name = f"{self.server}_{table_name}.csv"
@@ -266,7 +268,7 @@ class DaktelaExtractor:
         async for batch in self.api_client.fetch_table_data_batched(
             table_name=table_name,
             endpoint=endpoint,
-            fields=table_config.get("fields", []),
+            fields=[],
             filters=filters,
             batch_size=self.batch_size,
         ):
@@ -284,7 +286,7 @@ class DaktelaExtractor:
                 continue
 
             total_records += self._write_records(
-                output_table_name, table_config, transformed_records
+                output_table_name, table_config_all_fields, transformed_records
             )
 
         # Finalize table (write manifest)
@@ -304,13 +306,14 @@ class DaktelaExtractor:
             table_name: Name of dependent table to extract
         """
         table_config = self.table_configs[table_name]
+        table_config_all_fields = {**table_config, "fields": []}
         parent_table = table_config.get("parent_table")
         parent_id_field = table_config.get("parent_id_field", "id")
 
         logging.info(
             f"Extracting dependent table: {table_name} (parent: {parent_table}, parent_id_field: {parent_id_field})"
         )
-        child_endpoint = self._get_child_endpoint(table_name, table_config)
+        child_endpoint = self._get_child_endpoint(table_name, table_config_all_fields)
         parent_table_config = self.table_configs.get(parent_table, {})
         parent_endpoint = self._get_table_endpoint(parent_table, parent_table_config)
 
@@ -350,7 +353,7 @@ class DaktelaExtractor:
         filters = {}
 
         # Initialize transformer
-        transformer = DataTransformer(self.server, table_name, table_config)
+        transformer = DataTransformer(self.server, table_name, table_config_all_fields)
 
         # Table output name
         output_table_name = f"{self.server}_{table_name}.csv"
@@ -365,7 +368,7 @@ class DaktelaExtractor:
                     parent_table=parent_table,
                     parent_id=parent_id,
                     child_table=table_name,
-                    fields=table_config.get("fields", []),
+                    fields=[],
                     filters=filters,
                     parent_endpoint=parent_endpoint,
                     child_endpoint=child_endpoint,
@@ -386,7 +389,7 @@ class DaktelaExtractor:
 
             # Write batch when it reaches threshold
             if len(batch) >= self.batch_size:
-                self._write_records(output_table_name, table_config, batch)
+                self._write_records(output_table_name, table_config_all_fields, batch)
                 logging.debug(
                     f"Wrote batch of {len(batch)} records for table {table_name}"
                 )
@@ -394,7 +397,7 @@ class DaktelaExtractor:
 
         # Write remaining records
         if batch:
-            self._write_records(output_table_name, table_config, batch)
+            self._write_records(output_table_name, table_config_all_fields, batch)
             logging.debug(
                 f"Wrote final batch of {len(batch)} records for table {table_name}"
             )

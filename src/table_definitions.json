@@ -1,30 +1,24 @@
 {
   "contacts": {
-    "fields": ["name", "title", "email", "phone", "description", "created", "edited"],
     "primary_keys": ["name"]
   },
   "activities": {
-    "fields": ["name", "title", "description", "created", "edited", "user_id"],
     "primary_keys": ["name"],
     "keys": ["user_id"]
   },
   "activities_statuses": {
-    "fields": ["name", "title", "description", "created", "edited"],
     "primary_keys": ["name"]
   },
   "activities_email": {
-    "fields": ["name", "subject", "from_email", "to_email", "created", "edited"],
     "primary_keys": ["name"],
     "endpoint": "activitiesEmail"
   },
   "tickets": {
-    "fields": ["name", "title", "subject", "description", "created", "edited", "user_id"],
     "primary_keys": ["name"],
     "keys": ["user_id"],
     "list_columns": ["tags"]
   },
   "users": {
-    "fields": ["name", "title", "email", "created", "edited"],
     "primary_keys": ["name"]
   }
 }

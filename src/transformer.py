@@ -5,9 +5,8 @@ This module transforms raw API responses into CSV-ready format through a series 
 1. Flatten nested JSON structures (up to 2 levels)
 2. Clean HTML tags from string values
 3. Handle list columns and list-of-dicts columns
-4. Filter columns to keep only configured fields
-5. Sanitize column names for Keboola compatibility
-6. Add required output columns (server, id)
+4. Sanitize column names for Keboola compatibility
+5. Add required output columns (server, id)
 
 The transformation pipeline ensures data consistency and compatibility with
 Keboola Storage tables.
@@ -33,7 +32,6 @@ class DataTransformer:
         """
         self.server = server
         self.table_name = table_name
-        self.fields = table_config.get("fields", [])
         self.primary_keys = table_config.get("primary_keys", [])
         self.secondary_keys = table_config.get("secondary_keys", [])
         self.keys = table_config.get("keys", [])
@@ -50,10 +48,9 @@ class DataTransformer:
         1. Flatten nested JSON structures
         2. Clean HTML from string values
         3. Handle list/list-of-dicts columns (may create multiple rows)
-        4. Filter to keep only configured fields
-        5. Sanitize column names for Keboola compatibility
-        6. Add required output columns (server, id)
-        7. Handle special cases (activities table validation)
+        4. Sanitize column names for Keboola compatibility
+        5. Add required output columns (server, id)
+        6. Handle special cases (activities table validation)
 
         Args:
             records: List of raw API records
@@ -78,16 +75,13 @@ class DataTransformer:
             rows = self._handle_lists(cleaned)
 
             for row in rows:
-                # Step 4: Filter columns to only keep configured fields
-                filtered = self._filter_columns(row)
+                # Step 4: Sanitize column names for Keboola Storage compatibility
+                sanitized = self._sanitize_columns(row)
 
-                # Step 5: Sanitize column names for Keboola Storage compatibility
-                sanitized = self._sanitize_columns(filtered)
-
-                # Step 6: Add required output columns (server, id)
+                # Step 5: Add required output columns (server, id)
                 final_row = self._add_output_columns(sanitized)
 
-                # Step 7: Handle special cases for activities table
+                # Step 6: Handle special cases for activities table
                 # Validate that activities have a proper primary key
                 if self.table_name == "activities":
                     if not final_row.get("id") or final_row["id"] == self.server + "_":
@@ -230,36 +224,6 @@ class DataTransformer:
             rows = new_rows
 
         return rows
-
-    def _filter_columns(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Filter to keep only configured fields.
-
-        Args:
-            data: Dictionary with all columns
-
-        Returns:
-            Dictionary with only configured columns
-        """
-        if not self.fields:
-            return data
-
-        # Keep only configured fields and key fields
-        keep_fields = set(self.fields)
-        keep_fields.update(self.primary_keys)
-        keep_fields.update(self.secondary_keys)
-        keep_fields.update(self.keys)
-
-        filtered = {}
-        for key, value in data.items():
-            # Check if key matches any configured field
-            if key in keep_fields:
-                filtered[key] = value
-            # Also check for dynamically created columns from list_of_dicts
-            elif any(key.startswith(f"{col}_") for col in self.list_of_dicts_columns):
-                filtered[key] = value
-
-        return filtered
 
     def _sanitize_columns(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

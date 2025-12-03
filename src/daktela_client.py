@@ -23,7 +23,7 @@ AUTH_TIMEOUT_SECONDS = 30
 """Timeout for authentication requests."""
 
 # Endpoints that support date filtering via filter[field]=edited
-FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts", "activities"}
+FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts"}
 """Endpoints that support filtering on the 'edited' field."""
 
 

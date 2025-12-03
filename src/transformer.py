@@ -36,7 +36,7 @@ class DataTransformer:
         self.list_of_dicts_columns = table_config.get("list_of_dicts_columns", [])
         self.header_normalizer = DefaultHeaderNormalizer()
 
-    def transform_records(self, records: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
+    def transform_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Transform list of API records into CSV-ready format.
 
@@ -46,18 +46,14 @@ class DataTransformer:
         3. Handle list/list-of-dicts columns (may create multiple rows)
         4. Sanitize column names for Keboola compatibility
         5. Add required output columns (id)
-        6. Handle special cases (activities table validation)
 
         Args:
             records: List of raw API records
 
         Returns:
-            Tuple of (transformed_records, invalid_activity_ids)
-            - transformed_records: List of transformed records ready for CSV output
-            - invalid_activity_ids: List of activity IDs that are invalid (missing primary key)
+            List of transformed records ready for CSV output
         """
         transformed = []
-        invalid_activity_ids = []
 
         for record in records:
             # Step 1: Flatten nested JSON (up to 2 levels deep)
@@ -77,31 +73,11 @@ class DataTransformer:
                 # Step 5: Add required output columns (id)
                 final_row = self._add_output_columns(sanitized)
 
-                # Step 6: Handle special cases for activities table
-                # Validate that activities have a proper primary key
-                if self.table_name == "activities":
-                    if not final_row.get("id"):
-                        # Track invalid activity ID for filtering dependent tables
-                        if "name" in record:
-                            invalid_activity_ids.append(record["name"])
-                        continue  # Skip this record
-
-                # Rename conflicting 'name' column for activities table
-                # (to avoid conflict with primary key field)
-                if self.table_name == "activities" and "name" in final_row:
-                    final_row["activities_name"] = final_row.pop("name")
-
                 transformed.append(final_row)
 
         logging.info(f"Transformed {len(records)} records into {len(transformed)} rows for table {self.table_name}")
 
-        if invalid_activity_ids:
-            logging.warning(
-                f"Found {len(invalid_activity_ids)} invalid activities (missing primary key): "
-                f"{', '.join(invalid_activity_ids[:10])}"
-            )
-
-        return transformed, invalid_activity_ids
+        return transformed
 
     def _flatten_json(self, data: Dict[str, Any], parent_key: str = "", level: int = 0) -> Dict[str, Any]:
         """

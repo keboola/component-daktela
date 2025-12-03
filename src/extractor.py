@@ -53,7 +53,7 @@ class DaktelaExtractor:
         self._table_columns: Dict[str, List[str]] = {}
 
     async def extract_all(self):
-        """Extract all requested tables asynchronously."""
+        """Extract all requested tables asynchronously in parallel."""
         logging.info(f"Starting extraction for {len(self.requested_tables)} tables")
 
         # Create default config for all tables (endpoints are called directly)
@@ -63,28 +63,15 @@ class DaktelaExtractor:
         if not self.requested_tables:
             raise UserException("No tables specified for extraction")
 
-        await self._extract_batch(self.requested_tables)
+        # Extract all tables in parallel
+        tasks = [self._extract_table(table_name) for table_name in self.requested_tables]
+        await asyncio.gather(*tasks)
 
         logging.info("Extraction completed successfully")
 
     def _get_table_endpoint(self, table_name: str, table_config: Dict[str, Any]) -> str:
         """Return endpoint override for table if configured."""
         return table_config.get("endpoint", table_name)
-
-    async def _extract_batch(self, tables: List[str]):
-        """
-        Extract multiple tables asynchronously in parallel.
-
-        Args:
-            tables: List of table names to extract
-        """
-        logging.info(f"Extracting {len(tables)} tables asynchronously")
-
-        tasks = []
-        for table_name in tables:
-            tasks.append(self._extract_table(table_name))
-
-        await asyncio.gather(*tasks)
 
     async def _extract_table(self, table_name: str):
         """
@@ -121,7 +108,7 @@ class DaktelaExtractor:
                 continue
 
             # Transform batch
-            transformed_records, _ = transformer.transform_records(batch)
+            transformed_records = transformer.transform_records(batch)
 
             if not transformed_records:
                 continue

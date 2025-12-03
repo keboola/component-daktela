@@ -151,7 +151,7 @@ class DaktelaApiClient:
         endpoint: Optional[str] = None,
     ):
         """
-        Fetch data for a table in batches (generator for memory efficiency).
+        Fetch data for a table in pages (generator for memory efficiency).
 
         For endpoints that support filtering (tickets, contacts, activities),
         applies date range filter on 'edited' field.
@@ -182,11 +182,11 @@ class DaktelaApiClient:
             table_name: Name of the table to fetch
             date_from: Start date (edited >= date_from)
             date_to: End date (edited <= date_to)
-            limit: Number of records per page
-            batch_size: Number of records to accumulate before yielding
+            limit: Number of records per page (default: 1000)
+            batch_size: Not used (kept for backward compatibility)
 
         Yields:
-            Batches of records from the API
+            Pages of records from the API (up to 'limit' records per page)
         """
         endpoint_path = self._prepare_endpoint(endpoint or table_name)
         params = {"accessToken": self.access_token}
@@ -231,26 +231,17 @@ class DaktelaApiClient:
         if total == 0:
             return
 
-        # Fetch pages in batches to manage memory
-        batch = []
+        # Fetch and yield pages directly without accumulating
         for offset in range(0, total, limit):
             params_page = params.copy()
             params_page["skip"] = offset
             params_page["take"] = limit
 
             records = await self._fetch_page_direct(endpoint_path, params_page, table_name, offset)
-            batch.extend(records)
 
-            # Yield batch when it reaches batch_size
-            if len(batch) >= batch_size:
-                logging.debug(f"Yielding batch of {len(batch)} records")
-                yield batch
-                batch = []
-
-        # Yield remaining records
-        if batch:
-            logging.debug(f"Yielding final batch of {len(batch)} records")
-            yield batch
+            if records:
+                logging.debug(f"Yielding page of {len(records)} records")
+                yield records
 
     async def fetch_table_data(
         self,

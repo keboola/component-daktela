@@ -73,10 +73,16 @@
           "type": "array",
           "items": {
             "enum": [
-              "contacts",
+              "accounts",
               "activities",
+              "activitiesCall",
+              "activitiesChat",
+              "activitiesEmail",
+              "campaignsRecords",
+              "contacts",
+              "crmRecords",
+              "queues",
               "statuses",
-              "activities_email",
               "tickets",
               "users"
             ],

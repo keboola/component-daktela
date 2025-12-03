@@ -15,8 +15,7 @@
   "activities_email": {
     "fields": ["name", "subject", "from_email", "to_email", "created", "edited"],
     "primary_keys": ["name"],
-    "parent_table": "activities",
-    "parent_id_field": "id"
+    "endpoint": "activitiesEmail"
   },
   "tickets": {
     "fields": ["name", "title", "subject", "description", "created", "edited", "user_id"],

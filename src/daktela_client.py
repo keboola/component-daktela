@@ -1,5 +1,6 @@
 """
-Async HTTP client for Daktela API with authentication, retry logic and pagination.
+Async HTTP client for Daktela API with authentication and pagination.
+Retry logic is handled by the Keboola AsyncHttpClient.
 """
 
 import asyncio
@@ -14,28 +15,21 @@ from keboola.component.exceptions import UserException
 from configuration import DEFAULT_MAX_CONCURRENT_REQUESTS, DEFAULT_BATCH_SIZE
 
 # API Client constants
-DEFAULT_MAX_RETRIES = 8
-"""Maximum number of retry attempts for failed API requests."""
-
 DEFAULT_PAGE_LIMIT = 1000
 """Default number of records to fetch per API request."""
-
-LINEAR_BACKOFF_SECONDS = 1
-"""Base multiplier for linear backoff retry delay (delay = attempt * multiplier)."""
 
 AUTH_TIMEOUT_SECONDS = 30
 """Timeout for authentication requests."""
 
 
 class DaktelaApiClient:
-    """Async HTTP client for Daktela API with built-in authentication, retry and pagination."""
+    """Async HTTP client for Daktela API with built-in authentication and pagination."""
 
     def __init__(
         self,
         url: str,
         username: str,
         password: str,
-        max_retries: int = DEFAULT_MAX_RETRIES,
         max_concurrent: int = DEFAULT_MAX_CONCURRENT_REQUESTS,
         verify_ssl: bool = True,
     ):
@@ -46,14 +40,12 @@ class DaktelaApiClient:
             url: Base URL for Daktela API
             username: Daktela account username
             password: Daktela account password
-            max_retries: Maximum number of retry attempts
             max_concurrent: Maximum concurrent requests
             verify_ssl: Whether to verify SSL certificates (default: True)
         """
         self.url = url
         self.username = username
         self.password = password
-        self.max_retries = max_retries
         self.max_concurrent = max_concurrent
         self.verify_ssl = verify_ssl
         self.client = None  # Will be initialized in __aenter__
@@ -128,6 +120,15 @@ class DaktelaApiClient:
         if self.client:
             await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
+    def _prepare_endpoint(self, endpoint: str) -> str:
+        """Ensure endpoint includes api prefix and .json suffix."""
+        cleaned = endpoint.lstrip("/")
+        if not cleaned.endswith(".json"):
+            cleaned = f"{cleaned}.json"
+        if not cleaned.startswith("api/"):
+            cleaned = f"api/v6/{cleaned}"
+        return cleaned
+
     async def fetch_table_data_batched(
         self,
         table_name: str,
@@ -135,6 +136,7 @@ class DaktelaApiClient:
         filters: Dict[str, Any],
         limit: int = DEFAULT_PAGE_LIMIT,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        endpoint: Optional[str] = None,
     ):
         """
         Fetch data for a table in batches (generator for memory efficiency).
@@ -150,7 +152,7 @@ class DaktelaApiClient:
             Batches of records from the API
         """
         # Build endpoint (relative to base URL)
-        endpoint = f"api/v6/{table_name}.json"
+        endpoint = self._prepare_endpoint(endpoint or table_name)
 
         # Build query parameters
         params = {"accessToken": self.access_token}
@@ -168,7 +170,7 @@ class DaktelaApiClient:
         params_count["take"] = 1
 
         logging.info(f"Fetching total count for table: {table_name}")
-        first_response = await self._request_with_retry(endpoint, params_count)
+        first_response = await self.client.get(endpoint, params=params_count)
 
         if not first_response or "result" not in first_response:
             logging.warning(f"No data found for table: {table_name}")
@@ -207,6 +209,7 @@ class DaktelaApiClient:
         fields: List[str],
         filters: Dict[str, Any],
         limit: int = DEFAULT_PAGE_LIMIT,
+        endpoint: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch all data for a table with pagination (loads all into memory).
@@ -223,7 +226,7 @@ class DaktelaApiClient:
             List of records from the API
         """
         # Build endpoint (relative to base URL)
-        endpoint = f"api/v6/{table_name}.json"
+        endpoint = self._prepare_endpoint(endpoint or table_name)
 
         # Build query parameters
         params = {"accessToken": self.access_token}
@@ -241,7 +244,7 @@ class DaktelaApiClient:
         params_count["take"] = 1
 
         logging.info(f"Fetching total count for table: {table_name}")
-        first_response = await self._request_with_retry(endpoint, params_count)
+        first_response = await self.client.get(endpoint, params=params_count)
 
         if not first_response or "result" not in first_response:
             logging.warning(f"No data found for table: {table_name}")
@@ -281,6 +284,8 @@ class DaktelaApiClient:
         child_table: str,
         fields: List[str],
         filters: Dict[str, Any],
+        parent_endpoint: Optional[str] = None,
+        child_endpoint: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch data for a dependent table (child of parent).
@@ -291,12 +296,16 @@ class DaktelaApiClient:
             child_table: Name of child table
             fields: List of fields to include
             filters: Dictionary of filters to apply
+            parent_endpoint: Optional override for parent endpoint
+            child_endpoint: Optional override for child endpoint
 
         Returns:
             List of records from the API
         """
         # Build endpoint for dependent table
-        endpoint = f"api/v6/{parent_table}/{parent_id}/{child_table}.json"
+        parent_path = parent_endpoint or parent_table
+        child_path = child_endpoint or child_table
+        endpoint = f"api/v6/{parent_path}/{parent_id}/{child_path}.json"
 
         # Build query parameters
         params = {"accessToken": self.access_token}
@@ -309,7 +318,7 @@ class DaktelaApiClient:
         params.update(filters)
 
         logging.debug(f"Fetching dependent table: {child_table} for parent {parent_table}:{parent_id}")
-        response = await self._request_with_retry(endpoint, params)
+        response = await self.client.get(endpoint, params=params)
 
         if not response or "result" not in response:
             return []
@@ -351,53 +360,10 @@ class DaktelaApiClient:
             List of records from this page
         """
         logging.debug(f"Fetching {table_name} page at offset {offset}")
-        response = await self._request_with_retry(endpoint, params)
+        response = await self.client.get(endpoint, params=params)
 
         if not response or "result" not in response:
             return []
 
         data = response["result"].get("data", [])
         return data if isinstance(data, list) else []
-
-    async def _request_with_retry(self, endpoint: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Make HTTP request with linear backoff retry logic.
-
-        Args:
-            endpoint: API endpoint (relative to base URL)
-            params: Query parameters
-
-        Returns:
-            Response JSON as dictionary
-
-        Raises:
-            UserException: After all retries exhausted
-        """
-        last_exception = None
-
-        for attempt in range(self.max_retries):
-            try:
-                # AsyncHttpClient.get() returns parsed JSON directly
-                # It raises exceptions for non-200 status codes
-                data = await self.client.get(endpoint, params=params)
-                return data
-
-            except asyncio.TimeoutError as e:
-                logging.warning(f"Request timeout. Attempt {attempt + 1}/{self.max_retries}")
-                last_exception = e
-
-            except Exception as e:
-                logging.warning(f"Request failed: {str(e)}. Attempt {attempt + 1}/{self.max_retries}")
-                last_exception = e
-
-            # Linear backoff: 1s, 2s, 3s, ..., max_retries seconds
-            if attempt < self.max_retries - 1:
-                wait_time = (attempt + 1) * LINEAR_BACKOFF_SECONDS
-                logging.debug(f"Waiting {wait_time}s before retry...")
-                await asyncio.sleep(wait_time)
-
-        # All retries exhausted
-        error_msg = f"Failed to fetch data after {self.max_retries} attempts"
-        if last_exception:
-            error_msg += f": {str(last_exception)}"
-        raise UserException(error_msg)

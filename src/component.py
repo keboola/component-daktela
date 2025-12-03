@@ -94,9 +94,7 @@ class Component(ComponentBase):
         # Build table configs for each endpoint
         table_configs = {}
         for endpoint in params.data_selection.endpoints:
-            table_configs[endpoint] = {
-                "primary_keys": ["id"]
-            }
+            table_configs[endpoint] = {"primary_keys": ["id"]}
 
         return DaktelaExtractor(
             api_client=api_client,

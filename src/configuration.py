@@ -20,6 +20,8 @@ class Connection(BaseModel):
 class DataSelection(BaseModel):
     """Data selection configuration."""
 
+    date_from: str
+    date_to: str
     endpoints: list[str]
 
 

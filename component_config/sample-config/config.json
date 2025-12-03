@@ -17,6 +17,8 @@
       "verify_ssl": true
     },
     "data_selection": {
+      "date_from": "-7",
+      "date_to": "today",
       "endpoints": ["contacts", "activities", "tickets"]
     },
     "destination": {

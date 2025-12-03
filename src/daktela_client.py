@@ -97,7 +97,14 @@ class DaktelaApiClient:
             if "result" not in result or not result["result"]:
                 raise UserException(f"Invalid token in authentication response. Response: {response.text[:200]}")
 
-            access_token = result["result"]
+            # Extract just the accessToken string from the result object
+            token_data = result["result"]
+            if isinstance(token_data, dict) and "accessToken" in token_data:
+                access_token = token_data["accessToken"]
+            else:
+                # Fallback for older API versions that might return token directly
+                access_token = token_data
+
             logging.info("Successfully authenticated with Daktela API")
 
             return access_token

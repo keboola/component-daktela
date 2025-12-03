@@ -8,7 +8,6 @@ import logging
 import sys
 import traceback
 import keboola.utils
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from keboola.component.base import ComponentBase
@@ -37,14 +36,8 @@ class Component(ComponentBase):
         try:
             self.params = self._validate_and_get_configuration()
 
-            # Apply state for incremental processing
-            self._apply_state()
-
             # Run async extraction
             asyncio.run(self._run_async_extraction())
-
-            # Save state after successful extraction
-            self._save_state()
 
             logging.info("Daktela extraction completed successfully")
 
@@ -98,53 +91,32 @@ class Component(ComponentBase):
         from_datetime = keboola.utils.get_past_date(params.data_selection.date_from).strftime("%Y-%m-%d %H:%M:%S")
         to_datetime = keboola.utils.get_past_date(params.data_selection.date_to).strftime("%Y-%m-%d %H:%M:%S")
 
-        return DaktelaExtractor(
-            api_client=api_client,
-            table_configs={},
-            component=self,
-            url=params.connection.url,
-            incremental=params.destination.incremental,
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
-            requested_endpoints=params.data_selection.endpoints,
-            batch_size=params.destination.batch_size,
-        )
-
-    def _apply_state(self) -> None:
-        """Apply state for incremental processing."""
-        params = self._require_params()
-        if params.destination.incremental:
-            state = self.get_state_file()
-            last_timestamp = state.get("last_timestamp")
-
-            if last_timestamp:
-                logging.info(f"Incremental load: using last_timestamp={last_timestamp} as date_from")
-                # Override date_from with last successful run timestamp
-                params.data_selection.date_from = last_timestamp
-            else:
-                logging.info("Incremental load: no previous state found, performing full extraction")
-
-    def _save_state(self) -> None:
-        """Save state after successful extraction."""
-        params = self._require_params()
-        if params.destination.incremental:
-            current_timestamp = datetime.now(timezone.utc).isoformat()
-            state = {
-                "last_timestamp": current_timestamp,
-                "endpoints_extracted": params.data_selection.endpoints,
-                "url": params.connection.url,
+        # Build table configs for each endpoint
+        table_configs = {}
+        for endpoint in params.data_selection.endpoints:
+            table_configs[endpoint] = {
+                "primary_keys": ["id"]
             }
 
-            self.write_state_file(state)
-            logging.info(f"Saved state: last_timestamp={current_timestamp}")
+        return DaktelaExtractor(
+            api_client=api_client,
+            table_configs=table_configs,
+            component=self,
+            url=params.connection.url,
+            requested_endpoints=params.data_selection.endpoints,
+            batch_size=params.destination.batch_size,
+            date_from=from_datetime,
+            date_to=to_datetime,
+            incremental=params.destination.incremental,
+        )
 
     def write_table_data(
         self,
         table_name: str,
         records: List[Dict[str, Any]],
         table_config: Dict[str, Any],
-        incremental: bool,
         columns: List[str],
+        incremental: bool = False,
     ) -> None:
         """
         Write table data using create_out_table_definition and write_manifest pattern.

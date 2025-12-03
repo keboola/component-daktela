@@ -52,20 +52,20 @@
       "required": [
         "date_from",
         "date_to",
-        "tables"
+        "endpoints"
       ],
       "properties": {
         "date_from": {
           "type": "string",
           "title": "Date From",
-          "description": "Start date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
+          "description": "Start date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'. Used as filter for tickets, contacts, and activities endpoints.",
           "default": "7 days ago",
           "propertyOrder": 1
         },
         "date_to": {
           "type": "string",
           "title": "Date To",
-          "description": "End date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'",
+          "description": "End date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'. Used as filter for tickets, contacts, and activities endpoints.",
           "default": "today",
           "propertyOrder": 2
         },
@@ -108,7 +108,7 @@
           "type": "boolean",
           "title": "Incremental Load",
           "format": "checkbox",
-          "description": "If enabled, new data will be appended to existing data and state will be saved for the next run. If disabled, existing data will be replaced.",
+          "description": "If enabled, new data will be appended to existing tables. If disabled, existing tables will be replaced.",
           "default": false,
           "propertyOrder": 1
         },
@@ -119,7 +119,7 @@
           "default": 10000,
           "minimum": 100,
           "maximum": 100000,
-          "propertyOrder": 2
+          "propertyOrder": 3
         },
         "max_concurrent_requests": {
           "type": "integer",
@@ -128,7 +128,7 @@
           "default": 10,
           "minimum": 1,
           "maximum": 50,
-          "propertyOrder": 3
+          "propertyOrder": 4
         }
       },
       "propertyOrder": 3

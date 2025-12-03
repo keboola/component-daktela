@@ -4,6 +4,7 @@ Retry logic is handled by the Keboola AsyncHttpClient.
 """
 
 import asyncio
+import json
 import logging
 import warnings
 import requests
@@ -20,6 +21,10 @@ DEFAULT_PAGE_LIMIT = 1000
 
 AUTH_TIMEOUT_SECONDS = 30
 """Timeout for authentication requests."""
+
+# Endpoints that support date filtering via filter[field]=edited
+FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts", "activities"}
+"""Endpoints that support filtering on the 'edited' field."""
 
 
 class DaktelaApiClient:
@@ -139,7 +144,8 @@ class DaktelaApiClient:
     async def fetch_table_data_batched(
         self,
         table_name: str,
-        filters: Dict[str, Any],
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
         limit: int = DEFAULT_PAGE_LIMIT,
         batch_size: int = DEFAULT_BATCH_SIZE,
         endpoint: Optional[str] = None,
@@ -147,23 +153,65 @@ class DaktelaApiClient:
         """
         Fetch data for a table in batches (generator for memory efficiency).
 
+        For endpoints that support filtering (tickets, contacts, activities),
+        applies date range filter on 'edited' field.
+
+        Filtering modes:
+        - One date only: Simple format filter[field]=edited&filter[operator]=gte&filter[value]=date
+        - Both dates: Complex JSON format {"logic":"and","filters":[...]}
+
+        Complex filter example structure:
+        {
+            "filter": {
+                "logic": "or",
+                "filters": [
+                    {"field": "firstname", "operator": "eq", "value": "John"},
+                    {"field": "firstname", "operator": "eq", "value": "James"},
+                    {
+                        "logic": "and",
+                        "filters": [
+                            {"field": "firstname", "operator": "eq", "value": "David"},
+                            {"field": "lastname", "operator": "eq", "value": "Smith"}
+                        ]
+                    }
+                ]
+            }
+        }
+
         Args:
             table_name: Name of the table to fetch
-            filters: Dictionary of filters to apply
+            date_from: Start date (edited >= date_from)
+            date_to: End date (edited <= date_to)
             limit: Number of records per page
             batch_size: Number of records to accumulate before yielding
 
         Yields:
             Batches of records from the API
         """
-        # Build endpoint (relative to base URL)
-        endpoint = self._prepare_endpoint(endpoint or table_name)
-
-        # Build query parameters
+        endpoint_path = self._prepare_endpoint(endpoint or table_name)
         params = {"accessToken": self.access_token}
 
-        # Add filters
-        params.update(filters)
+        # Apply date filtering for supported endpoints
+        if table_name in FILTER_PAGINATED_ENDPOINTS:
+            filters = []
+
+            if date_from:
+                filters.append({"field": "edited", "operator": "gte", "value": date_from})
+
+            if date_to:
+                filters.append({"field": "edited", "operator": "lte", "value": date_to})
+
+            if len(filters) == 2:
+                # Both dates: use AND logic (JSON complex filter format)
+                logging.info(f"Date filter for {table_name}: {date_from} to {date_to}")
+                params["filter"] = json.dumps({"logic": "and", "filters": filters})
+            elif len(filters) == 1:
+                # Single date: use simple format
+                f = filters[0]
+                logging.info(f"Date filter for {table_name}: edited {f['operator']} {f['value']}")
+                params["filter[field]"] = f["field"]
+                params["filter[operator]"] = f["operator"]
+                params["filter[value]"] = f["value"]
 
         # First, get total count
         params_count = params.copy()
@@ -171,7 +219,7 @@ class DaktelaApiClient:
         params_count["take"] = 1
 
         logging.info(f"Fetching total count for table: {table_name}")
-        first_response = await self.client.get(endpoint, params=params_count)
+        first_response = await self.client.get(endpoint_path, params=params_count)
 
         if not first_response or "result" not in first_response:
             logging.warning(f"No data found for table: {table_name}")
@@ -190,7 +238,7 @@ class DaktelaApiClient:
             params_page["skip"] = offset
             params_page["take"] = limit
 
-            records = await self._fetch_page_direct(endpoint, params_page, table_name, offset)
+            records = await self._fetch_page_direct(endpoint_path, params_page, table_name, offset)
             batch.extend(records)
 
             # Yield batch when it reaches batch_size

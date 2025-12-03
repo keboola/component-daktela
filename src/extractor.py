@@ -21,11 +21,11 @@ class DaktelaExtractor:
         table_configs: Dict[str, Any],
         component: "Component",
         url: str,
-        incremental: bool,
-        from_datetime: str,
-        to_datetime: str,
         requested_endpoints: List[str],
         batch_size: int = 10000,
+        date_from: str = None,
+        date_to: str = None,
+        incremental: bool = False,
     ):
         """
         Initialize extractor.
@@ -35,30 +35,26 @@ class DaktelaExtractor:
             table_configs: Dictionary of table configurations
             component: Component instance for writing tables
             url: Base URL (e.g., https://customer.daktela.com)
-            incremental: Whether to use incremental mode
-            from_datetime: Start datetime for extraction
-            to_datetime: End datetime for extraction
             requested_endpoints: List of endpoint names to extract
             batch_size: Number of records to process in each batch (default: 10000)
+            date_from: Start date for filtering (for supported endpoints)
+            date_to: End date for filtering (for supported endpoints)
+            incremental: Whether to use incremental mode
         """
         self.api_client = api_client
         self.table_configs = table_configs
         self.component = component
         self.url = url
-        self.incremental = incremental
-        self.from_datetime = from_datetime
-        self.to_datetime = to_datetime
         self.requested_endpoints = requested_endpoints
         self.batch_size = batch_size
+        self.date_from = date_from
+        self.date_to = date_to
+        self.incremental = incremental
         self._table_columns: Dict[str, List[str]] = {}
 
     async def extract_all(self):
         """Extract all requested endpoints asynchronously in parallel."""
         logging.info(f"Starting extraction for {len(self.requested_endpoints)} endpoints")
-
-        # Create default config for all endpoints (endpoints are called directly)
-        for endpoint_name in self.requested_endpoints:
-            self.table_configs[endpoint_name] = {"primary_keys": ["id"]}
 
         if not self.requested_endpoints:
             raise UserException("No endpoints specified for extraction")
@@ -84,9 +80,6 @@ class DaktelaExtractor:
 
         table_config = self.table_configs[table_name]
 
-        # Build filters
-        filters = self._build_filters(table_config)
-
         # Endpoint override support
         endpoint = self._get_table_endpoint(table_name, table_config)
 
@@ -101,7 +94,8 @@ class DaktelaExtractor:
         async for batch in self.api_client.fetch_table_data_batched(
             table_name=table_name,
             endpoint=endpoint,
-            filters=filters,
+            date_from=self.date_from,
+            date_to=self.date_to,
             batch_size=self.batch_size,
         ):
             if not batch:
@@ -121,30 +115,6 @@ class DaktelaExtractor:
             logging.info(f"Completed extraction for table: {table_name} ({total_records} records)")
         else:
             logging.warning(f"No data found for table: {table_name}")
-
-    def _build_filters(self, table_config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build filters for API request.
-
-        Args:
-            table_config: Table configuration dict
-
-        Returns:
-            Dictionary of filters
-        """
-        filters = {}
-
-        # Add date range filters (unless explicitly disabled for this table)
-        if table_config.get("date_filterable", True):
-            filters["from"] = self.from_datetime
-            filters["to"] = self.to_datetime
-
-        # Add table-specific filters from config
-        config_filters = table_config.get("filters", {})
-        if config_filters:
-            filters.update(config_filters)
-
-        return filters
 
     def _get_columns(self, sample_record: Dict[str, Any]) -> List[str]:
         """
@@ -183,8 +153,8 @@ class DaktelaExtractor:
             table_name=output_table_name,
             records=records,
             table_config=table_config,
-            incremental=self.incremental,
             columns=self._table_columns[output_table_name],
+            incremental=self.incremental,
         )
 
         return len(records)

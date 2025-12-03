@@ -132,7 +132,6 @@ class DaktelaApiClient:
     async def fetch_table_data_batched(
         self,
         table_name: str,
-        fields: List[str],
         filters: Dict[str, Any],
         limit: int = DEFAULT_PAGE_LIMIT,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -143,7 +142,6 @@ class DaktelaApiClient:
 
         Args:
             table_name: Name of the table to fetch
-            fields: List of fields to include
             filters: Dictionary of filters to apply
             limit: Number of records per page
             batch_size: Number of records to accumulate before yielding
@@ -156,10 +154,6 @@ class DaktelaApiClient:
 
         # Build query parameters
         params = {"accessToken": self.access_token}
-
-        # Add fields if specified
-        if fields:
-            params["fields"] = ",".join(fields)
 
         # Add filters
         params.update(filters)
@@ -206,7 +200,6 @@ class DaktelaApiClient:
     async def fetch_table_data(
         self,
         table_name: str,
-        fields: List[str],
         filters: Dict[str, Any],
         limit: int = DEFAULT_PAGE_LIMIT,
         endpoint: Optional[str] = None,
@@ -218,7 +211,6 @@ class DaktelaApiClient:
 
         Args:
             table_name: Name of the table to fetch
-            fields: List of fields to include
             filters: Dictionary of filters to apply
             limit: Number of records per page
 
@@ -230,10 +222,6 @@ class DaktelaApiClient:
 
         # Build query parameters
         params = {"accessToken": self.access_token}
-
-        # Add fields if specified
-        if fields:
-            params["fields"] = ",".join(fields)
 
         # Add filters
         params.update(filters)
@@ -276,55 +264,6 @@ class DaktelaApiClient:
 
         logging.info(f"Table {table_name}: Fetched {len(all_records)} records")
         return all_records
-
-    async def fetch_dependent_table_data(
-        self,
-        parent_table: str,
-        parent_id: str,
-        child_table: str,
-        fields: List[str],
-        filters: Dict[str, Any],
-        parent_endpoint: Optional[str] = None,
-        child_endpoint: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch data for a dependent table (child of parent).
-
-        Args:
-            parent_table: Name of parent table
-            parent_id: ID of parent record
-            child_table: Name of child table
-            fields: List of fields to include
-            filters: Dictionary of filters to apply
-            parent_endpoint: Optional override for parent endpoint
-            child_endpoint: Optional override for child endpoint
-
-        Returns:
-            List of records from the API
-        """
-        # Build endpoint for dependent table
-        parent_path = parent_endpoint or parent_table
-        child_path = child_endpoint or child_table
-        endpoint = f"api/v6/{parent_path}/{parent_id}/{child_path}.json"
-
-        # Build query parameters
-        params = {"accessToken": self.access_token}
-
-        # Add fields if specified
-        if fields:
-            params["fields"] = ",".join(fields)
-
-        # Add filters
-        params.update(filters)
-
-        logging.debug(f"Fetching dependent table: {child_table} for parent {parent_table}:{parent_id}")
-        response = await self.client.get(endpoint, params=params)
-
-        if not response or "result" not in response:
-            return []
-
-        data = response["result"].get("data", [])
-        return data if isinstance(data, list) else []
 
     async def _fetch_page(
         self, endpoint: str, params: Dict[str, Any], table_name: str, offset: int

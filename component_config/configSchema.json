@@ -69,7 +69,7 @@
           "default": "today",
           "propertyOrder": 2
         },
-        "tables": {
+        "endpoints": {
           "type": "array",
           "items": {
             "enum": [
@@ -82,12 +82,12 @@
             ],
             "type": "string"
           },
-          "title": "Tables to Sync",
+          "title": "Endpoints to Extract",
           "format": "select",
           "options": {
             "tags": true
           },
-          "description": "List of tables/endpoints to extract. Common tables: contacts, activities, activities_email, tickets, users. You can also specify any custom endpoint name (e.g., 'statuses' to call /api/v6/statuses).",
+          "description": "List of API endpoints to extract. Common endpoints: contacts, activities, activities_email, tickets, users, statuses. You can specify any valid Daktela API endpoint name (e.g., 'statuses' calls /api/v6/statuses).",
           "uniqueItems": true,
           "propertyOrder": 3
         }

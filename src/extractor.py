@@ -24,7 +24,7 @@ class DaktelaExtractor:
         incremental: bool,
         from_datetime: str,
         to_datetime: str,
-        requested_tables: List[str],
+        requested_endpoints: List[str],
         batch_size: int = 10000,
     ):
         """
@@ -38,7 +38,7 @@ class DaktelaExtractor:
             incremental: Whether to use incremental mode
             from_datetime: Start datetime for extraction
             to_datetime: End datetime for extraction
-            requested_tables: List of table names to extract
+            requested_endpoints: List of endpoint names to extract
             batch_size: Number of records to process in each batch (default: 10000)
         """
         self.api_client = api_client
@@ -48,23 +48,23 @@ class DaktelaExtractor:
         self.incremental = incremental
         self.from_datetime = from_datetime
         self.to_datetime = to_datetime
-        self.requested_tables = requested_tables
+        self.requested_endpoints = requested_endpoints
         self.batch_size = batch_size
         self._table_columns: Dict[str, List[str]] = {}
 
     async def extract_all(self):
-        """Extract all requested tables asynchronously in parallel."""
-        logging.info(f"Starting extraction for {len(self.requested_tables)} tables")
+        """Extract all requested endpoints asynchronously in parallel."""
+        logging.info(f"Starting extraction for {len(self.requested_endpoints)} endpoints")
 
-        # Create default config for all tables (endpoints are called directly)
-        for table_name in self.requested_tables:
-            self.table_configs[table_name] = {"primary_keys": ["id"]}
+        # Create default config for all endpoints (endpoints are called directly)
+        for endpoint_name in self.requested_endpoints:
+            self.table_configs[endpoint_name] = {"primary_keys": ["id"]}
 
-        if not self.requested_tables:
-            raise UserException("No tables specified for extraction")
+        if not self.requested_endpoints:
+            raise UserException("No endpoints specified for extraction")
 
-        # Extract all tables in parallel
-        tasks = [self._extract_table(table_name) for table_name in self.requested_tables]
+        # Extract all endpoints in parallel
+        tasks = [self._extract_table(endpoint_name) for endpoint_name in self.requested_endpoints]
         await asyncio.gather(*tasks)
 
         logging.info("Extraction completed successfully")

@@ -2,11 +2,11 @@ import sys
 import unittest
 from pathlib import Path
 
-from keboola.component.exceptions import UserException
-from configuration import Configuration
-
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+from keboola.component.exceptions import UserException  # noqa: E402
+from configuration import Configuration  # noqa: E402
 
 
 class TestConfiguration(unittest.TestCase):
@@ -23,13 +23,13 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "-7",
                 "date_to": "today",
-                "tables": ["contacts", "activities"]
+                "endpoints": ["contacts", "activities"]
             }
         )
 
         self.assertEqual(config.connection.username, "test_user")
         self.assertEqual(config.connection.url, "https://demo.daktela.com")
-        self.assertEqual(len(config.data_selection.tables), 2)
+        self.assertEqual(len(config.data_selection.endpoints), 2)
 
     def test_url_storage(self):
         """Test URL is properly stored."""
@@ -42,7 +42,7 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "-7",
                 "date_to": "today",
-                "tables": ["contacts"]
+                "endpoints": ["contacts"]
             }
         )
 
@@ -60,7 +60,7 @@ class TestConfiguration(unittest.TestCase):
                 data_selection={
                     "date_from": "-7",
                     "date_to": "today",
-                    "tables": ["contacts"]
+                    "endpoints": ["contacts"]
                 }
             )
 
@@ -76,7 +76,7 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "2024-01-01",
                 "date_to": "2024-01-10",
-                "tables": ["contacts"]
+                "endpoints": ["contacts"]
             }
         )
         self.assertIsNotNone(config.data_selection.date_from)
@@ -94,14 +94,14 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "-7",
                 "date_to": "today",
-                "tables": ["contacts"]
+                "endpoints": ["contacts"]
             }
         )
         self.assertIsNotNone(config.data_selection.date_from)
         self.assertIsNotNone(config.data_selection.date_to)
 
-    def test_tables_list_parsing(self):
-        """Test table list parsing."""
+    def test_endpoints_list_parsing(self):
+        """Test endpoints list parsing."""
         config = Configuration(
             connection={
                 "url": "https://demo.daktela.com",
@@ -111,15 +111,15 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "-7",
                 "date_to": "today",
-                "tables": ["contacts", "activities", "tickets"]
+                "endpoints": ["contacts", "activities", "tickets"]
             }
         )
 
-        tables = config.data_selection.tables
-        self.assertEqual(len(tables), 3)
-        self.assertIn("contacts", tables)
-        self.assertIn("activities", tables)
-        self.assertIn("tickets", tables)
+        endpoints = config.data_selection.endpoints
+        self.assertEqual(len(endpoints), 3)
+        self.assertIn("contacts", endpoints)
+        self.assertIn("activities", endpoints)
+        self.assertIn("tickets", endpoints)
 
 
 if __name__ == "__main__":

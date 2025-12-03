@@ -71,7 +71,7 @@ class Component(ComponentBase):
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
         logging.info(f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}")
-        logging.info(f"Tables to extract: {params.data_selection.tables}")
+        logging.info(f"Endpoints to extract: {params.data_selection.endpoints}")
         logging.info(f"Incremental mode: {params.destination.incremental}")
 
         return params
@@ -106,7 +106,7 @@ class Component(ComponentBase):
             incremental=params.destination.incremental,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
-            requested_tables=params.data_selection.tables,
+            requested_endpoints=params.data_selection.endpoints,
             batch_size=params.destination.batch_size,
         )
 
@@ -131,7 +131,7 @@ class Component(ComponentBase):
             current_timestamp = datetime.now(timezone.utc).isoformat()
             state = {
                 "last_timestamp": current_timestamp,
-                "tables_extracted": params.data_selection.tables,
+                "endpoints_extracted": params.data_selection.endpoints,
                 "url": params.connection.url,
             }
 

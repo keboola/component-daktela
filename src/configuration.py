@@ -22,7 +22,7 @@ class DataSelection(BaseModel):
 
     date_from: str
     date_to: str
-    tables: list[str]
+    endpoints: list[str]
 
 
 class Destination(BaseModel):

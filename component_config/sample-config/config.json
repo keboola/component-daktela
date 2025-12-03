@@ -19,7 +19,7 @@
     "data_selection": {
       "date_from": "-7",
       "date_to": "today",
-      "tables": ["contacts", "activities", "tickets"]
+      "endpoints": ["contacts", "activities", "tickets"]
     },
     "destination": {
       "incremental": false,

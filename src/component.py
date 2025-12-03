@@ -72,7 +72,7 @@ class Component(ComponentBase):
         """Load and validate configuration parameters."""
         params = Configuration(**self.configuration.parameters)
 
-        logging.info(f"Starting Daktela extraction from {params.connection.server}")
+        logging.info(f"Starting Daktela extraction from {params.connection.url}")
         logging.info(f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}")
         logging.info(f"Tables to extract: {params.data_selection.tables}")
         logging.info(f"Incremental mode: {params.destination.incremental}")
@@ -83,7 +83,7 @@ class Component(ComponentBase):
         """Initialize and return configured API client (authenticates during init)."""
         params = self._require_params()
         return DaktelaApiClient(
-            url=params.url,
+            url=params.connection.url,
             username=params.connection.username,
             password=params.connection.password,
             max_concurrent=params.destination.max_concurrent_requests,
@@ -119,7 +119,7 @@ class Component(ComponentBase):
             api_client=api_client,
             table_configs=table_configs,
             component=self,
-            server=params.connection.server,
+            url=params.connection.url,
             incremental=params.destination.incremental,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
@@ -149,7 +149,7 @@ class Component(ComponentBase):
             state = {
                 "last_timestamp": current_timestamp,
                 "tables_extracted": params.data_selection.tables,
-                "server": params.connection.server,
+                "url": params.connection.url,
             }
 
             self.write_state_file(state)

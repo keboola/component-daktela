@@ -6,7 +6,7 @@ This module transforms raw API responses into CSV-ready format through a series 
 2. Clean HTML tags from string values
 3. Handle list columns and list-of-dicts columns
 4. Sanitize column names for Keboola compatibility
-5. Add required output columns (server, id)
+5. Add required output columns (id)
 
 The transformation pipeline ensures data consistency and compatibility with
 Keboola Storage tables.
@@ -21,21 +21,17 @@ from keboola.utils.header_normalizer import DefaultHeaderNormalizer
 class DataTransformer:
     """Transforms raw API data into structured CSV-ready format."""
 
-    def __init__(self, server: str, table_name: str, table_config: Dict[str, Any]):
+    def __init__(self, table_name: str, table_config: Dict[str, Any]):
         """
         Initialize data transformer.
 
         Args:
-            server: Server name for prefixing
             table_name: Name of the table
             table_config: Configuration dict for the table being transformed
         """
-        self.server = server
         self.table_name = table_name
         self.primary_keys = table_config.get("primary_keys", [])
         self.secondary_keys = table_config.get("secondary_keys", [])
-        self.keys = table_config.get("keys", [])
-        self.no_prefix_columns = table_config.get("no_prefix_columns", [])
         self.list_columns = table_config.get("list_columns", [])
         self.list_of_dicts_columns = table_config.get("list_of_dicts_columns", [])
         self.header_normalizer = DefaultHeaderNormalizer()
@@ -49,7 +45,7 @@ class DataTransformer:
         2. Clean HTML from string values
         3. Handle list/list-of-dicts columns (may create multiple rows)
         4. Sanitize column names for Keboola compatibility
-        5. Add required output columns (server, id)
+        5. Add required output columns (id)
         6. Handle special cases (activities table validation)
 
         Args:
@@ -78,13 +74,13 @@ class DataTransformer:
                 # Step 4: Sanitize column names for Keboola Storage compatibility
                 sanitized = self._sanitize_columns(row)
 
-                # Step 5: Add required output columns (server, id)
+                # Step 5: Add required output columns (id)
                 final_row = self._add_output_columns(sanitized)
 
                 # Step 6: Handle special cases for activities table
                 # Validate that activities have a proper primary key
                 if self.table_name == "activities":
-                    if not final_row.get("id") or final_row["id"] == self.server + "_":
+                    if not final_row.get("id"):
                         # Track invalid activity ID for filtering dependent tables
                         if "name" in record:
                             invalid_activity_ids.append(record["name"])
@@ -245,39 +241,27 @@ class DataTransformer:
 
     def _add_output_columns(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Add required output columns: server and id.
+        Add required output columns: id.
 
         Args:
             data: Dictionary with data columns
 
         Returns:
-            Dictionary with server and id columns added
+            Dictionary with id column added
         """
-        output = {"server": self.server}
+        output = {}
         key_columns = self.primary_keys + self.secondary_keys
 
         id_parts = []
         for key in key_columns:
             value = data.get(key)
-            if value is None:
-                continue
-            prefixed_value = self._prefixed_value(key, value)
-            if prefixed_value is not None:
-                id_parts.append(str(prefixed_value))
+            if value is not None:
+                id_parts.append(str(value))
 
         output["id"] = "_".join(id_parts) if id_parts else ""
 
-        keyed_fields = set(key_columns + self.keys)
+        # Add all other data columns
         for key, value in data.items():
-            if key in keyed_fields:
-                output[key] = self._prefixed_value(key, value)
-            else:
-                output[key] = value
+            output[key] = value
 
         return output
-
-    def _prefixed_value(self, key: str, value: Any) -> Any:
-        """Add server prefix to values unless exempted."""
-        if key in self.no_prefix_columns or value is None:
-            return value
-        return f"{self.server}_{value}"

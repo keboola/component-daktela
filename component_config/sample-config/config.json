@@ -11,7 +11,7 @@
   },
   "parameters": {
     "connection": {
-      "server": "demo",
+      "url": "https://demo.daktela.com",
       "username": "test_user",
       "#password": "test_password",
       "verify_ssl": true

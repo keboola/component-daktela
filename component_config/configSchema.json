@@ -11,15 +11,15 @@
       "type": "object",
       "title": "Connection",
       "required": [
-        "server",
+        "url",
         "username",
         "#password"
       ],
       "properties": {
-        "server": {
+        "url": {
           "type": "string",
-          "title": "Server",
-          "description": "Daktela server identifier (e.g., 'mycompany' for mycompany.daktela.com)",
+          "title": "URL",
+          "description": "Daktela base URL (e.g., 'https://mycompany.daktela.com')",
           "propertyOrder": 1
         },
         "username": {

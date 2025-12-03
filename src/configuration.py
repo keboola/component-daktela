@@ -1,7 +1,7 @@
 import logging
 
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, ValidationError, computed_field
+from pydantic import BaseModel, Field, ValidationError
 
 DEFAULT_MAX_CONCURRENT_REQUESTS = 10  # Default maximum number of concurrent API requests
 
@@ -11,7 +11,7 @@ DEFAULT_BATCH_SIZE = 10000  # Default batch size for processing records before w
 class Connection(BaseModel):
     """Connection configuration."""
 
-    server: str
+    url: str
     username: str
     password: str = Field(alias="#password")
     verify_ssl: bool = True
@@ -48,9 +48,3 @@ class Configuration(BaseModel):
 
         if self.debug:
             logging.debug("Component will run in Debug mode")
-
-    @computed_field
-    @property
-    def url(self) -> str:
-        """Build URL from server name."""
-        return f"https://{self.connection.server}.daktela.com"

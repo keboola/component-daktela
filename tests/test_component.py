@@ -2,12 +2,11 @@ import sys
 import unittest
 from pathlib import Path
 
-from keboola.component.exceptions import UserException
-
-from configuration import Configuration
-
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+from keboola.component.exceptions import UserException
+from configuration import Configuration
 
 
 class TestConfiguration(unittest.TestCase):
@@ -17,7 +16,7 @@ class TestConfiguration(unittest.TestCase):
         """Test valid configuration parameters."""
         config = Configuration(
             connection={
-                "server": "demo",
+                "url": "https://demo.daktela.com",
                 "username": "test_user",
                 "#password": "test_password"
             },
@@ -29,15 +28,14 @@ class TestConfiguration(unittest.TestCase):
         )
 
         self.assertEqual(config.connection.username, "test_user")
-        self.assertEqual(config.connection.server, "demo")
-        self.assertEqual(config.url, "https://demo.daktela.com")
+        self.assertEqual(config.connection.url, "https://demo.daktela.com")
         self.assertEqual(len(config.data_selection.tables), 2)
 
-    def test_url_construction_from_server(self):
-        """Test URL is constructed from server parameter."""
+    def test_url_storage(self):
+        """Test URL is properly stored."""
         config = Configuration(
             connection={
-                "server": "mycompany",
+                "url": "https://mycompany.daktela.com",
                 "username": "test",
                 "#password": "test"
             },
@@ -48,33 +46,16 @@ class TestConfiguration(unittest.TestCase):
             }
         )
 
-        self.assertEqual(config.url, "https://mycompany.daktela.com")
-        self.assertEqual(config.connection.server, "mycompany")
+        self.assertEqual(config.connection.url, "https://mycompany.daktela.com")
 
-    def test_url_validation(self):
-        """Test URL validation fails for invalid URLs."""
-        with self.assertRaises(UserException):
-            Configuration(
-                connection={
-                    "username": "test",
-                    "#password": "test",
-                    "url": "https://invalid.com"  # Invalid - should be 'server' not 'url'
-                },
-                data_selection={
-                    "date_from": "-7",
-                    "date_to": "today",
-                    "tables": ["contacts"]
-                }
-            )
-
-    def test_missing_url_and_server(self):
-        """Test validation fails when server is missing."""
+    def test_missing_url(self):
+        """Test validation fails when URL is missing."""
         with self.assertRaises(UserException):
             Configuration(
                 connection={
                     "username": "test",
                     "#password": "test"
-                    # Missing required 'server' field
+                    # Missing required 'url' field
                 },
                 data_selection={
                     "date_from": "-7",
@@ -88,7 +69,7 @@ class TestConfiguration(unittest.TestCase):
         # Valid dates
         config = Configuration(
             connection={
-                "server": "demo",
+                "url": "https://demo.daktela.com",
                 "username": "test",
                 "#password": "test"
             },
@@ -106,7 +87,7 @@ class TestConfiguration(unittest.TestCase):
         # Today
         config = Configuration(
             connection={
-                "server": "demo",
+                "url": "https://demo.daktela.com",
                 "username": "test",
                 "#password": "test"
             },
@@ -123,7 +104,7 @@ class TestConfiguration(unittest.TestCase):
         """Test table list parsing."""
         config = Configuration(
             connection={
-                "server": "demo",
+                "url": "https://demo.daktela.com",
                 "username": "test",
                 "#password": "test"
             },

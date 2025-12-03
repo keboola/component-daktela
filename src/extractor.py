@@ -20,7 +20,7 @@ class DaktelaExtractor:
         api_client: DaktelaApiClient,
         table_configs: Dict[str, Any],
         component: "Component",
-        server: str,
+        url: str,
         incremental: bool,
         from_datetime: str,
         to_datetime: str,
@@ -34,7 +34,7 @@ class DaktelaExtractor:
             api_client: Configured API client
             table_configs: Dictionary of table configurations
             component: Component instance for writing tables
-            server: Server name
+            url: Base URL (e.g., https://customer.daktela.com)
             incremental: Whether to use incremental mode
             from_datetime: Start datetime for extraction
             to_datetime: End datetime for extraction
@@ -44,7 +44,7 @@ class DaktelaExtractor:
         self.api_client = api_client
         self.table_configs = table_configs
         self.component = component
-        self.server = server
+        self.url = url
         self.incremental = incremental
         self.from_datetime = from_datetime
         self.to_datetime = to_datetime
@@ -108,10 +108,10 @@ class DaktelaExtractor:
         endpoint = self._get_table_endpoint(table_name, table_config)
 
         # Initialize transformer
-        transformer = DataTransformer(self.server, table_name, table_config)
+        transformer = DataTransformer(table_name, table_config)
 
         # Table output name
-        output_table_name = f"{self.server}_{table_name}.csv"
+        output_table_name = f"{table_name}.csv"
 
         # Fetch and process data in batches
         total_records = 0
@@ -172,8 +172,8 @@ class DaktelaExtractor:
         Returns:
             Ordered list of column names
         """
-        # Start with server and id
-        columns = ["server", "id"]
+        # Start with id
+        columns = ["id"]
 
         # Add all other columns from sample record
         for key in sample_record.keys():

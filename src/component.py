@@ -135,6 +135,7 @@ class Component(ComponentBase):
                 columns=columns,
                 primary_key=table_config.get("manifest_primary_key", ["id"]),
                 incremental=incremental,
+                has_header=True
             )
 
             table_definitions[table_name] = out_table

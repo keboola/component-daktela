@@ -188,9 +188,15 @@ class DaktelaApiClient:
         Yields:
             Pages of records from the API (up to 'page_limit' records per page)
         """
-        page_limit = batch_size or limit
-        if page_limit <= 0:
+        base_limit = batch_size or limit or DEFAULT_PAGE_LIMIT
+        if base_limit <= 0:
             raise UserException("Batch size must be a positive integer.")
+
+        page_limit = min(base_limit, DEFAULT_PAGE_LIMIT)
+        if page_limit != base_limit:
+            logging.info(
+                f"Batch size {base_limit} exceeds API page limit {DEFAULT_PAGE_LIMIT}; capping to {page_limit}"
+            )
 
         endpoint_path = self._prepare_endpoint(endpoint or table_name)
         params = {"accessToken": self.access_token}

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, TYPE_CHECKING
 
+from configuration import DEFAULT_BATCH_SIZE
 from daktela_client import DaktelaApiClient
 from transformer import DataTransformer
 from keboola.component.exceptions import UserException
@@ -22,7 +23,7 @@ class DaktelaExtractor:
         component: "Component",
         url: str,
         requested_endpoints: List[str],
-        batch_size: int = 10000,
+        batch_size: int = DEFAULT_BATCH_SIZE,
         date_from: str = None,
         date_to: str = None,
         incremental: bool = False,
@@ -36,7 +37,7 @@ class DaktelaExtractor:
             component: Component instance for writing tables
             url: Base URL (e.g., https://customer.daktela.com)
             requested_endpoints: List of endpoint names to extract
-            batch_size: Number of records to process in each batch (default: 10000)
+            batch_size: Number of records to process in each batch (default: 1000)
             date_from: Start date for filtering (for supported endpoints)
             date_to: End date for filtering (for supported endpoints)
             incremental: Whether to use incremental mode
@@ -79,6 +80,7 @@ class DaktelaExtractor:
         logging.info(f"Extracting table: {table_name}")
 
         table_config = self.table_configs[table_name]
+        write_batch_size = max(1, self.batch_size)
 
         # Endpoint override support
         endpoint = self._get_table_endpoint(table_name, table_config)
@@ -106,8 +108,8 @@ class DaktelaExtractor:
             for transformed_record in transformer.transform_records(page):
                 write_batch.append(transformed_record)
 
-                # Write in batches of 1000 to reduce I/O overhead
-                if len(write_batch) >= 1000:
+                # Write in configurable batches to reduce memory footprint
+                if len(write_batch) >= write_batch_size:
                     total_records += self._write_records(output_table_name, table_config, write_batch)
                     write_batch = []
 

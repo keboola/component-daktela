@@ -182,12 +182,16 @@ class DaktelaApiClient:
             table_name: Name of the table to fetch
             date_from: Start date (edited >= date_from)
             date_to: End date (edited <= date_to)
-            limit: Number of records per page (default: 1000)
-            batch_size: Not used (kept for backward compatibility)
+            limit: Number of records per page (default: 1000). Kept for backward compatibility.
+            batch_size: Configured batch size, used as API page size when provided.
 
         Yields:
-            Pages of records from the API (up to 'limit' records per page)
+            Pages of records from the API (up to 'page_limit' records per page)
         """
+        page_limit = batch_size or limit
+        if page_limit <= 0:
+            raise UserException("Batch size must be a positive integer.")
+
         endpoint_path = self._prepare_endpoint(endpoint or table_name)
         params = {"accessToken": self.access_token}
 
@@ -226,16 +230,18 @@ class DaktelaApiClient:
             return
 
         total = first_response["result"].get("total", 0)
-        logging.info(f"Table {table_name}: Total entries: {total}, Batches: {(total + limit - 1) // limit}")
+        logging.info(
+            f"Table {table_name}: Total entries: {total}, Batches: {(total + page_limit - 1) // page_limit}"
+        )
 
         if total == 0:
             return
 
         # Fetch and yield pages directly without accumulating
-        for offset in range(0, total, limit):
+        for offset in range(0, total, page_limit):
             params_page = params.copy()
             params_page["skip"] = offset
-            params_page["take"] = limit
+            params_page["take"] = page_limit
 
             records = await self._fetch_page_direct(endpoint_path, params_page, table_name, offset)
 

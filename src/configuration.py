@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 DEFAULT_MAX_CONCURRENT_REQUESTS = 10  # Default maximum number of concurrent API requests
 
-DEFAULT_BATCH_SIZE = 10000  # Default batch size for processing records before writing to CSV
+DEFAULT_BATCH_SIZE = 1000  # Default batch size for processing records before writing to CSV
 
 
 class Connection(BaseModel):
@@ -45,6 +45,9 @@ class Configuration(BaseModel):
         except ValidationError as e:
             error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
             raise UserException(f"Validation Error: {', '.join(error_messages)}")
+
+        if self.destination.batch_size <= 0:
+            raise UserException("Batch size must be a positive integer.")
 
         if self.debug:
             logging.debug("Component will run in Debug mode")

@@ -4,7 +4,6 @@ Retry logic is handled by the Keboola AsyncHttpClient.
 """
 
 import asyncio
-import json
 import logging
 import warnings
 import requests
@@ -25,6 +24,10 @@ AUTH_TIMEOUT_SECONDS = 30
 # Endpoints that support date filtering via filter[field]=edited
 FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts"}
 """Endpoints that support filtering on the 'edited' field."""
+
+# Activities endpoint supports pagination with date filtering on the 'time' field
+FILTERED_ACTIVITIES_ENDPOINTS = {"activities"}
+"""Endpoints that should be filtered on the 'time' field."""
 
 
 class DaktelaApiClient:
@@ -202,23 +205,29 @@ class DaktelaApiClient:
         params = {"accessToken": self.access_token}
 
         # Apply date filtering for supported endpoints
-        if table_name in FILTER_PAGINATED_ENDPOINTS:
+        if table_name in FILTER_PAGINATED_ENDPOINTS or table_name in FILTERED_ACTIVITIES_ENDPOINTS:
             filters = []
+            filter_field = "edited" if table_name in FILTER_PAGINATED_ENDPOINTS else "time"
 
             if date_from:
-                filters.append({"field": "edited", "operator": "gte", "value": date_from})
+                filters.append({"field": filter_field, "operator": "gte", "value": date_from})
 
             if date_to:
-                filters.append({"field": "edited", "operator": "lte", "value": date_to})
+                filters.append({"field": filter_field, "operator": "lte", "value": date_to})
 
             if len(filters) == 2:
-                # Both dates: use AND logic (JSON complex filter format)
+                # Both dates: use URL parameter format (not JSON format)
+                # Format: filter[0][field]=edited&filter[0][operator]=gte&filter[0][value]=...
+                #         filter[1][field]=edited&filter[1][operator]=lte&filter[1][value]=...
                 logging.info(f"Date filter for {table_name}: {date_from} to {date_to}")
-                params["filter"] = json.dumps({"logic": "and", "filters": filters})
+                for i, f in enumerate(filters):
+                    params[f"filter[{i}][field]"] = f["field"]
+                    params[f"filter[{i}][operator]"] = f["operator"]
+                    params[f"filter[{i}][value]"] = f["value"]
             elif len(filters) == 1:
                 # Single date: use simple format
                 f = filters[0]
-                logging.info(f"Date filter for {table_name}: edited {f['operator']} {f['value']}")
+                logging.info(f"Date filter for {table_name}: {f['field']} {f['operator']} {f['value']}")
                 params["filter[field]"] = f["field"]
                 params["filter[operator]"] = f["operator"]
                 params["filter[value]"] = f["value"]
@@ -236,9 +245,7 @@ class DaktelaApiClient:
             return
 
         total = first_response["result"].get("total", 0)
-        logging.info(
-            f"Table {table_name}: Total entries: {total}, Batches: {(total + page_limit - 1) // page_limit}"
-        )
+        logging.info(f"Table {table_name}: Total entries: {total}, Batches: {(total + page_limit - 1) // page_limit}")
 
         if total == 0:
             return
@@ -356,8 +363,11 @@ class DaktelaApiClient:
         Returns:
             List of records from this page
         """
-        logging.debug(f"Fetching {table_name} page at offset {offset}")
-        response = await self.client.get(endpoint, params=params)
+        try:
+            logging.debug(f"Fetching {table_name} page at offset {offset}")
+            response = await self.client.get(endpoint, params=params)
+        except Exception as e:
+            logging.error(f"Error fetching {table_name} page at offset {offset}: {e}")
 
         if not response or "result" not in response:
             return []

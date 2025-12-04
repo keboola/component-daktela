@@ -54,15 +54,46 @@ class DaktelaExtractor:
         self._table_columns: Dict[str, List[str]] = {}
 
     async def extract_all(self):
-        """Extract all requested endpoints asynchronously in parallel."""
+        """
+        Extract all requested endpoints asynchronously.
+
+        Uses two-phase extraction like the old component:
+        Phase 1: Extract all tables except activities and activities_statuses
+        Phase 2: Extract activities and activities_statuses
+
+        This is done because activities may depend on data from other tables
+        for filtering invalid activities.
+        """
         logging.info(f"Starting extraction for {len(self.requested_endpoints)} endpoints")
 
         if not self.requested_endpoints:
             raise UserException("No endpoints specified for extraction")
 
-        # Extract all endpoints in parallel
-        tasks = [self._extract_table(endpoint_name) for endpoint_name in self.requested_endpoints]
-        await asyncio.gather(*tasks)
+        # Define activities-related endpoints that need special treatment
+        # These are extracted in phase 2 after all other tables
+        activities_endpoints = {
+            "activities",
+            "activities_statuses",
+            "activitiesCall",
+            "activitiesChat",
+            "activitiesEmail",
+        }
+
+        # Phase 1: Extract all tables except activities-related ones
+        phase1_endpoints = [ep for ep in self.requested_endpoints if ep not in activities_endpoints]
+        if phase1_endpoints:
+            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints")
+            tasks = [self._extract_table(endpoint_name) for endpoint_name in phase1_endpoints]
+            await asyncio.gather(*tasks)
+            logging.info("Phase 1 extraction completed")
+
+        # Phase 2: Extract activities-related tables
+        phase2_endpoints = [ep for ep in self.requested_endpoints if ep in activities_endpoints]
+        if phase2_endpoints:
+            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints")
+            tasks = [self._extract_table(endpoint_name) for endpoint_name in phase2_endpoints]
+            await asyncio.gather(*tasks)
+            logging.info("Phase 2 extraction completed")
 
         logging.info("Extraction completed successfully")
 

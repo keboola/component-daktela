@@ -7,6 +7,7 @@ import asyncio
 import logging
 import warnings
 import requests
+import httpx
 from typing import Dict, List, Any, Optional
 
 from keboola.http_client import AsyncHttpClient
@@ -25,9 +26,14 @@ AUTH_TIMEOUT_SECONDS = 30
 FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts"}
 """Endpoints that support filtering on the 'edited' field."""
 
-# Activities endpoint supports pagination with date filtering on the 'time' field
-FILTERED_ACTIVITIES_ENDPOINTS = {"activities"}
-"""Endpoints that should be filtered on the 'time' field."""
+# Activities endpoints and their time-like filter fields
+ACTIVITIES_FILTER_FIELDS = {
+    "activities": "time",
+    "activitiesCall": "call_time",
+    "activitiesChat": "time",
+    "activitiesEmail": "time",
+}
+"""Endpoints that should be filtered on a time field, mapped per endpoint."""
 
 
 class DaktelaApiClient:
@@ -205,9 +211,12 @@ class DaktelaApiClient:
         params = {"accessToken": self.access_token}
 
         # Apply date filtering for supported endpoints
-        if table_name in FILTER_PAGINATED_ENDPOINTS or table_name in FILTERED_ACTIVITIES_ENDPOINTS:
+        if table_name in FILTER_PAGINATED_ENDPOINTS or table_name in ACTIVITIES_FILTER_FIELDS:
             filters = []
-            filter_field = "edited" if table_name in FILTER_PAGINATED_ENDPOINTS else "time"
+            if table_name in FILTER_PAGINATED_ENDPOINTS:
+                filter_field = "edited"
+            else:
+                filter_field = ACTIVITIES_FILTER_FIELDS[table_name]
 
             if date_from:
                 filters.append({"field": filter_field, "operator": "gte", "value": date_from})
@@ -238,7 +247,25 @@ class DaktelaApiClient:
         params_count["take"] = 1
 
         logging.info(f"Fetching total count for table: {table_name}")
-        first_response = await self.client.get(endpoint_path, params=params_count)
+        try:
+            first_response = await self.client.get(endpoint_path, params=params_count)
+        except httpx.HTTPStatusError as exc:
+            # Some activities sub-endpoints reject filters; retry without filters
+            if (
+                exc.response is not None
+                and exc.response.status_code == 400
+                and table_name in ACTIVITIES_FILTER_FIELDS
+                and any(key.startswith("filter[") for key in params_count)
+            ):
+                logging.warning(
+                    "API rejected date filter for %s (status 400). Retrying without filters for this endpoint.",
+                    table_name,
+                )
+                params = {"accessToken": self.access_token}
+                params_count = {"accessToken": self.access_token, "skip": 0, "take": 1}
+                first_response = await self.client.get(endpoint_path, params=params_count)
+            else:
+                raise
 
         if not first_response or "result" not in first_response:
             logging.warning(f"No data found for table: {table_name}")

@@ -94,7 +94,11 @@ class Component(ComponentBase):
         # Build table configs for each endpoint
         table_configs = {}
         for endpoint in params.data_selection.endpoints:
-            table_configs[endpoint] = {"primary_keys": ["id"]}
+            # activitiesCall has different primary key
+            if endpoint == "activitiesCall":
+                table_configs[endpoint] = {"primary_keys": ["id_call"]}
+            else:
+                table_configs[endpoint] = {"primary_keys": ["name"]}
 
         return DaktelaExtractor(
             api_client=api_client,
@@ -133,9 +137,9 @@ class Component(ComponentBase):
             out_table = self.create_out_table_definition(
                 table_name,
                 columns=columns,
-                primary_key=table_config.get("manifest_primary_key", ["id"]),
+                primary_key=table_config.get("primary_keys"),
                 incremental=incremental,
-                has_header=True
+                has_header=True,
             )
 
             table_definitions[table_name] = out_table

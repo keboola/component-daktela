@@ -1,1 +1,1 @@
-Daktela short description
+Daktela CRM and Contact Center platform

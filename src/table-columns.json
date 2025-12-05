@@ -1,0 +1,17 @@
+{
+  "users": ["name", "title", "alias", "description", "call_steering_description", "extension", "extension_state", "clid", "static", "allowRecordingInterruption", "recordAtCallStart", "email", "emailAuth", "icon", "emoji", "nps_score", "backoffice_user", "forwarding_number", "deleted", "deactivated"],
+  "groups": ["name", "title", "description", "type", "deleted"],
+  "pauses": ["name", "title", "paid", "type", "max_duration", "calculated_from", "auto_pause", "deleted"],
+  "queues": ["name", "title", "description", "type", "direction", "deactivated", "deleted", "usersCount"],
+  "tickets": ["name", "title", "email", "description", "stage", "priority", "sla_deadtime", "sla_change", "sla_notify", "sla_duration", "sla_custom", "reopen", "deleted", "created", "edited", "first_answer", "first_answer_duration", "closed"],
+  "accounts": ["name", "title", "survey", "description", "deleted"],
+  "contacts": ["name", "title", "firstname", "lastname", "account", "description", "created", "edited"],
+  "statuses": ["name", "title", "validation", "nextcall", "blacklist_database", "blacklist_expiration_time", "color", "deleted"],
+  "templates": ["name", "title", "description", "format", "usingtype", "content", "deleted", "id_template"],
+  "activities": ["name", "time", "title", "action", "type", "priority", "description", "time_wait", "time_open", "time_close", "important", "survey"],
+  "activitiesCall": ["name", "time"],
+  "activitiesChat": ["name", "time", "title"],
+  "activitiesEmail": ["name", "time", "title"],
+  "campaignsRecords": ["name", "activity", "title", "number", "action", "created", "edited"],
+  "crmRecords": ["name", "title", "created", "edited"]
+}

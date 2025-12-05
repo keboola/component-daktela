@@ -84,7 +84,10 @@
               "queues",
               "statuses",
               "tickets",
-              "users"
+              "users",
+              "groups",
+              "pauses",
+              "templates"
             ],
             "type": "string"
           },

@@ -1,7 +1,9 @@
 """Main extractor module for Daktela data extraction."""
 
 import asyncio
+import json
 import logging
+import os
 from typing import Any, Dict, List, TYPE_CHECKING
 
 from configuration import DEFAULT_BATCH_SIZE
@@ -52,6 +54,7 @@ class DaktelaExtractor:
         self.date_to = date_to
         self.incremental = incremental
         self._table_columns: Dict[str, List[str]] = {}
+        self._column_definitions = self._load_column_definitions()
 
     async def extract_all(self):
         """
@@ -97,6 +100,18 @@ class DaktelaExtractor:
 
         logging.info("Extraction completed successfully")
 
+    def _load_column_definitions(self) -> Dict[str, List[str]]:
+        """Load column definitions from table-columns.json."""
+        columns_file = os.path.join(os.path.dirname(__file__), "table-columns.json")
+        try:
+            with open(columns_file, "r") as f:
+                data = json.load(f)
+                # Return only the top-level mapping (endpoint -> columns array)
+                return {k: v for k, v in data.items() if isinstance(v, list)}
+        except Exception as e:
+            logging.warning(f"Could not load table-columns.json: {e}")
+            return {}
+
     def _get_table_endpoint(self, table_name: str, table_config: Dict[str, Any]) -> str:
         """Return endpoint override for table if configured."""
         return table_config.get("endpoint", table_name)
@@ -122,6 +137,9 @@ class DaktelaExtractor:
         # Table output name
         output_table_name = f"{table_name}.csv"
 
+        # Get fields to fetch from column definitions
+        fields = self._column_definitions.get(table_name)
+
         # Fetch and process data in pages
         total_records = 0
         async for page in self.api_client.fetch_table_data_batched(
@@ -130,6 +148,7 @@ class DaktelaExtractor:
             date_from=self.date_from,
             date_to=self.date_to,
             batch_size=self.batch_size,
+            fields=fields,
         ):
             if not page:
                 continue

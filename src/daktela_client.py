@@ -158,6 +158,7 @@ class DaktelaApiClient:
         limit: int = DEFAULT_PAGE_LIMIT,
         batch_size: int = DEFAULT_BATCH_SIZE,
         endpoint: Optional[str] = None,
+        fields: Optional[List[str]] = None,
     ):
         """
         Fetch data for a table in pages (generator for memory efficiency).
@@ -193,6 +194,8 @@ class DaktelaApiClient:
             date_to: End date (edited <= date_to)
             limit: Number of records per page (default: 1000). Kept for backward compatibility.
             batch_size: Configured batch size, used as API page size when provided.
+            endpoint: Optional endpoint override
+            fields: Optional list of field names to fetch from the API
 
         Yields:
             Pages of records from the API (up to 'page_limit' records per page)
@@ -209,6 +212,10 @@ class DaktelaApiClient:
 
         endpoint_path = self._prepare_endpoint(endpoint or table_name)
         params = {"accessToken": self.access_token}
+
+        # Add fields parameter if specified
+        if fields:
+            params["fields"] = ",".join(fields)
 
         # Apply date filtering for supported endpoints
         if table_name in FILTER_PAGINATED_ENDPOINTS or table_name in ACTIVITIES_FILTER_FIELDS:
@@ -263,6 +270,10 @@ class DaktelaApiClient:
                 )
                 params = {"accessToken": self.access_token}
                 params_count = {"accessToken": self.access_token, "skip": 0, "take": 1}
+                # Preserve fields parameter if it was set
+                if fields:
+                    params["fields"] = ",".join(fields)
+                    params_count["fields"] = ",".join(fields)
                 first_response = await self.client.get(endpoint_path, params=params_count)
             else:
                 raise

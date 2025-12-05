@@ -14,14 +14,14 @@ Keboola Storage tables.
 
 import re
 import logging
-from typing import Dict, List, Any
+from typing import Any
 from keboola.utils.header_normalizer import DefaultHeaderNormalizer
 
 
 class DataTransformer:
     """Transforms raw API data into structured CSV-ready format."""
 
-    def __init__(self, table_name: str, table_config: Dict[str, Any]):
+    def __init__(self, table_name: str, table_config: dict[str, Any]):
         """
         Initialize data transformer.
 
@@ -36,7 +36,7 @@ class DataTransformer:
         self.list_of_dicts_columns = table_config.get("list_of_dicts_columns", [])
         self.header_normalizer = DefaultHeaderNormalizer()
 
-    def transform_records(self, records: List[Dict[str, Any]]):
+    def transform_records(self, records: list[dict[str, Any]]):
         """
         Transform list of API records into CSV-ready format (generator).
 
@@ -79,7 +79,7 @@ class DataTransformer:
 
         logging.info(f"Transformed {input_count} records into {output_count} rows for table {self.table_name}")
 
-    def _flatten_json(self, data: Dict[str, Any], parent_key: str = "", level: int = 0) -> Dict[str, Any]:
+    def _flatten_json(self, data: dict[str, Any], parent_key: str = "", level: int = 0) -> dict[str, Any]:
         """
         Flatten nested JSON dictionaries up to 2 levels.
 
@@ -106,7 +106,7 @@ class DataTransformer:
 
         return items
 
-    def _clean_html(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_html(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Remove HTML tags from string values.
 
@@ -133,7 +133,7 @@ class DataTransformer:
 
         return cleaned
 
-    def _handle_lists(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _handle_lists(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Handle list columns and list of dicts columns.
 
@@ -197,7 +197,7 @@ class DataTransformer:
 
         return rows
 
-    def _sanitize_columns(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_columns(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Sanitize column names using keboola.utils.header_normalizer.
 
@@ -215,7 +215,7 @@ class DataTransformer:
 
         return sanitized
 
-    def _add_output_columns(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _add_output_columns(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Add required output columns: id.
 

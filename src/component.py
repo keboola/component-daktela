@@ -8,7 +8,7 @@ import logging
 import sys
 import traceback
 import keboola.utils
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
@@ -28,8 +28,8 @@ class Component(ComponentBase):
 
     def __init__(self) -> None:
         super().__init__()
-        self.params: Optional[Configuration] = None
-        self._table_definitions: Dict[str, Any] = {}
+        self.params: Configuration | None = None
+        self._table_definitions: dict[str, Any] = {}
 
     def run(self) -> None:
         """Main execution - orchestrates the component workflow."""
@@ -115,9 +115,9 @@ class Component(ComponentBase):
     def write_table_data(
         self,
         table_name: str,
-        records: List[Dict[str, Any]],
-        table_config: Dict[str, Any],
-        columns: List[str],
+        records: list[dict[str, Any]],
+        table_config: dict[str, Any],
+        columns: list[str],
         incremental: bool = False,
     ) -> None:
         """
@@ -183,7 +183,7 @@ class Component(ComponentBase):
         else:
             logging.warning(f"No table definition found for {table_name}, skipping manifest")
 
-    def _get_table_definitions(self) -> Dict[str, Any]:
+    def _get_table_definitions(self) -> dict[str, Any]:
         """Return initialized table definitions container."""
         if not hasattr(self, "_table_definitions"):
             self._table_definitions = {}

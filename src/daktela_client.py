@@ -8,7 +8,7 @@ import logging
 import warnings
 import requests
 import httpx
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 from keboola.http_client import AsyncHttpClient
 from keboola.component.exceptions import UserException
@@ -153,12 +153,12 @@ class DaktelaApiClient:
     async def fetch_table_data_batched(
         self,
         table_name: str,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         limit: int = DEFAULT_PAGE_LIMIT,
         batch_size: int = DEFAULT_BATCH_SIZE,
-        endpoint: Optional[str] = None,
-        fields: Optional[List[str]] = None,
+        endpoint: str | None = None,
+        fields: list[str] | None = None,
     ):
         """
         Fetch data for a table in pages (generator for memory efficiency).
@@ -303,10 +303,10 @@ class DaktelaApiClient:
     async def fetch_table_data(
         self,
         table_name: str,
-        filters: Dict[str, Any],
+        filters: dict[str, Any],
         limit: int = DEFAULT_PAGE_LIMIT,
-        endpoint: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        endpoint: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Fetch all data for a table with pagination (loads all into memory).
 
@@ -369,8 +369,8 @@ class DaktelaApiClient:
         return all_records
 
     async def _fetch_page(
-        self, endpoint: str, params: Dict[str, Any], table_name: str, offset: int
-    ) -> List[Dict[str, Any]]:
+        self, endpoint: str, params: dict[str, Any], table_name: str, offset: int
+    ) -> list[dict[str, Any]]:
         """
         Fetch a single page of data with concurrency limiting.
 
@@ -387,8 +387,8 @@ class DaktelaApiClient:
             return await self._fetch_page_direct(endpoint, params, table_name, offset)
 
     async def _fetch_page_direct(
-        self, endpoint: str, params: Dict[str, Any], table_name: str, offset: int
-    ) -> List[Dict[str, Any]]:
+        self, endpoint: str, params: dict[str, Any], table_name: str, offset: int
+    ) -> list[dict[str, Any]]:
         """
         Fetch a single page of data without concurrency limiting.
 

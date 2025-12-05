@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from configuration import DEFAULT_BATCH_SIZE
 from daktela_client import DaktelaApiClient
@@ -21,13 +21,13 @@ class DaktelaExtractor:
     def __init__(
         self,
         api_client: DaktelaApiClient,
-        table_configs: Dict[str, Any],
+        table_configs: dict[str, Any],
         component: "Component",
         url: str,
-        requested_endpoints: List[str],
+        requested_endpoints: list[str],
         batch_size: int = DEFAULT_BATCH_SIZE,
-        date_from: str = None,
-        date_to: str = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         incremental: bool = False,
     ):
         """
@@ -53,7 +53,7 @@ class DaktelaExtractor:
         self.date_from = date_from
         self.date_to = date_to
         self.incremental = incremental
-        self._table_columns: Dict[str, List[str]] = {}
+        self._table_columns: dict[str, list[str]] = {}
         self._column_definitions = self._load_column_definitions()
 
     async def extract_all(self):
@@ -100,7 +100,7 @@ class DaktelaExtractor:
 
         logging.info("Extraction completed successfully")
 
-    def _load_column_definitions(self) -> Dict[str, List[str]]:
+    def _load_column_definitions(self) -> dict[str, list[str]]:
         """Load column definitions from table-columns.json."""
         columns_file = os.path.join(os.path.dirname(__file__), "table-columns.json")
         try:
@@ -112,7 +112,7 @@ class DaktelaExtractor:
             logging.warning(f"Could not load table-columns.json: {e}")
             return {}
 
-    def _get_table_endpoint(self, table_name: str, table_config: Dict[str, Any]) -> str:
+    def _get_table_endpoint(self, table_name: str, table_config: dict[str, Any]) -> str:
         """Return endpoint override for table if configured."""
         return table_config.get("endpoint", table_name)
 
@@ -174,7 +174,7 @@ class DaktelaExtractor:
         else:
             logging.warning(f"No data found for table: {table_name}")
 
-    def _get_columns(self, sample_record: Dict[str, Any]) -> List[str]:
+    def _get_columns(self, sample_record: dict[str, Any]) -> list[str]:
         """
         Get ordered list of columns for output.
 
@@ -197,8 +197,8 @@ class DaktelaExtractor:
     def _write_records(
         self,
         output_table_name: str,
-        table_config: Dict[str, Any],
-        records: List[Dict[str, Any]],
+        table_config: dict[str, Any],
+        records: list[dict[str, Any]],
     ) -> int:
         """Write a batch of records via the component and return written count."""
         if not records:

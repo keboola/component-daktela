@@ -294,7 +294,7 @@ class DaktelaApiClient:
             params_page["skip"] = offset
             params_page["take"] = page_limit
 
-            records = await self._fetch_page_direct(endpoint_path, params_page, table_name, offset)
+            records = await self._fetch_page(endpoint_path, params_page, table_name, offset)
 
             if records:
                 logging.debug(f"Yielding page of {len(records)} records")

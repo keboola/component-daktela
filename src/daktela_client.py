@@ -64,6 +64,8 @@ class DaktelaApiClient:
         self.verify_ssl = verify_ssl
         self.client = None  # Will be initialized in __aenter__
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        self._token_lock = asyncio.Lock()  # Lock for thread-safe token refresh
+        self._token_version = 0  # Track token version to prevent redundant refreshes
 
         # Authenticate synchronously during initialization
         self.access_token = self._authenticate()
@@ -120,6 +122,7 @@ class DaktelaApiClient:
                 access_token = token_data
 
             logging.info("Successfully authenticated with Daktela API")
+            self._token_version += 1  # Increment version on successful auth
 
             return access_token
 
@@ -129,6 +132,23 @@ class DaktelaApiClient:
             raise UserException(f"Connection timeout when connecting to {self.url}: {str(e)}")
         except requests.exceptions.RequestException as e:
             raise UserException(f"Request failed: {str(e)}")
+
+    async def _refresh_token(self, old_version: int) -> None:
+        """
+        Refresh the access token with double-check locking.
+
+        Args:
+            old_version: Token version that was invalid (for double-check)
+        """
+        async with self._token_lock:
+            # Double-check: if another request already refreshed the token, skip
+            if self._token_version > old_version:
+                logging.debug("Token already refreshed by another request")
+                return
+
+            logging.info("Refreshing access token...")
+            self.access_token = self._authenticate()
+            logging.info("Access token refreshed successfully")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -392,6 +412,8 @@ class DaktelaApiClient:
         """
         Fetch a single page of data without concurrency limiting.
 
+        Automatically refreshes token and retries on 401 errors.
+
         Args:
             endpoint: API endpoint (relative to base URL)
             params: Query parameters
@@ -401,14 +423,35 @@ class DaktelaApiClient:
         Returns:
             List of records from this page
         """
-        try:
-            logging.debug(f"Fetching {table_name} page at offset {offset}")
-            response = await self.client.get(endpoint, params=params)
-        except Exception as e:
-            logging.error(f"Error fetching {table_name} page at offset {offset}: {e}")
+        for attempt in range(2):
+            # Capture current token version for double-check locking
+            token_version = self._token_version
 
-        if not response or "result" not in response:
-            return []
+            # Build params with current token
+            current_params = params.copy()
+            current_params["accessToken"] = self.access_token
 
-        data = response["result"].get("data", [])
-        return data if isinstance(data, list) else []
+            try:
+                logging.debug(f"Fetching {table_name} page at offset {offset}")
+                response = await self.client.get(endpoint, params=current_params)
+
+                if not response or "result" not in response:
+                    return []
+
+                data = response["result"].get("data", [])
+                return data if isinstance(data, list) else []
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 401 and attempt == 0:
+                    logging.warning(
+                        f"Token expired for {table_name} at offset {offset}, refreshing..."
+                    )
+                    await self._refresh_token(token_version)
+                    continue
+                raise
+
+            except Exception as e:
+                logging.error(f"Error fetching {table_name} at offset {offset}: {e}")
+                raise
+
+        return []

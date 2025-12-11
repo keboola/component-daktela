@@ -1,5 +1,6 @@
 """Main extractor module for Daktela data extraction."""
 
+import asyncio
 import json
 import logging
 import os
@@ -12,6 +13,10 @@ from keboola.component.exceptions import UserException
 
 if TYPE_CHECKING:
     from component import Component
+
+# Maximum number of endpoints to extract concurrently.
+# This limits memory usage when multiple large tables are extracted simultaneously.
+MAX_CONCURRENT_ENDPOINTS = 3
 
 
 class DaktelaExtractor:
@@ -82,24 +87,40 @@ class DaktelaExtractor:
         }
 
         # Phase 1: Extract all tables except activities-related ones
-        # Process endpoints sequentially to limit memory usage.
-        # Parallel extraction could cause OOM when multiple large tables are extracted simultaneously.
         phase1_endpoints = [ep for ep in self.requested_endpoints if ep not in activities_endpoints]
         if phase1_endpoints:
-            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints (sequentially)")
-            for endpoint_name in phase1_endpoints:
-                await self._extract_table(endpoint_name)
+            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints "
+                         f"(max {MAX_CONCURRENT_ENDPOINTS} concurrent)")
+            await self._run_endpoints_with_limit(phase1_endpoints)
             logging.info("Phase 1 extraction completed")
 
-        # Phase 2: Extract activities-related tables (sequentially)
+        # Phase 2: Extract activities-related tables
         phase2_endpoints = [ep for ep in self.requested_endpoints if ep in activities_endpoints]
         if phase2_endpoints:
-            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints (sequentially)")
-            for endpoint_name in phase2_endpoints:
-                await self._extract_table(endpoint_name)
+            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints "
+                         f"(max {MAX_CONCURRENT_ENDPOINTS} concurrent)")
+            await self._run_endpoints_with_limit(phase2_endpoints)
             logging.info("Phase 2 extraction completed")
 
         logging.info("Extraction completed successfully")
+
+    async def _run_endpoints_with_limit(self, endpoints: list[str]) -> None:
+        """
+        Run endpoint extractions with bounded concurrency.
+
+        This limits the number of endpoints being extracted simultaneously
+        to prevent OOM when multiple large tables are extracted at once.
+
+        Args:
+            endpoints: List of endpoint names to extract
+        """
+        sem = asyncio.Semaphore(MAX_CONCURRENT_ENDPOINTS)
+
+        async def run_one(endpoint: str) -> None:
+            async with sem:
+                await self._extract_table(endpoint)
+
+        await asyncio.gather(*(run_one(ep) for ep in endpoints))
 
     def _load_column_definitions(self) -> dict[str, list[str]]:
         """Load column definitions from table-columns.json."""

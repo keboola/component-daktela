@@ -1,6 +1,5 @@
 """Main extractor module for Daktela data extraction."""
 
-import asyncio
 import json
 import logging
 import os
@@ -83,19 +82,21 @@ class DaktelaExtractor:
         }
 
         # Phase 1: Extract all tables except activities-related ones
+        # Process endpoints sequentially to limit memory usage.
+        # Parallel extraction could cause OOM when multiple large tables are extracted simultaneously.
         phase1_endpoints = [ep for ep in self.requested_endpoints if ep not in activities_endpoints]
         if phase1_endpoints:
-            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints")
-            tasks = [self._extract_table(endpoint_name) for endpoint_name in phase1_endpoints]
-            await asyncio.gather(*tasks)
+            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints (sequentially)")
+            for endpoint_name in phase1_endpoints:
+                await self._extract_table(endpoint_name)
             logging.info("Phase 1 extraction completed")
 
-        # Phase 2: Extract activities-related tables
+        # Phase 2: Extract activities-related tables (sequentially)
         phase2_endpoints = [ep for ep in self.requested_endpoints if ep in activities_endpoints]
         if phase2_endpoints:
-            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints")
-            tasks = [self._extract_table(endpoint_name) for endpoint_name in phase2_endpoints]
-            await asyncio.gather(*tasks)
+            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints (sequentially)")
+            for endpoint_name in phase2_endpoints:
+                await self._extract_table(endpoint_name)
             logging.info("Phase 2 extraction completed")
 
         logging.info("Extraction completed successfully")

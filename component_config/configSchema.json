@@ -118,10 +118,10 @@
         "batch_size": {
           "type": "integer",
           "title": "Batch Size",
-          "description": "Number of records to request per API page and to flush to CSV in one chunk. Lower this value to reduce memory use for wide/large tables.",
+          "description": "Number of records to request per API page and to flush to CSV in one chunk. Note: Daktela API has a maximum page size of 1000, so values above 1000 will be automatically capped.",
           "default": 1000,
           "minimum": 100,
-          "maximum": 100000,
+          "maximum": 1000,
           "propertyOrder": 3
         },
         "max_concurrent_requests": {

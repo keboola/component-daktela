@@ -110,6 +110,7 @@ class Component(ComponentBase):
             date_from=from_datetime,
             date_to=to_datetime,
             incremental=params.destination.incremental,
+            max_concurrent_endpoints=params.destination.max_concurrent_endpoints,
         )
 
     def write_table_data(

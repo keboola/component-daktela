@@ -127,11 +127,20 @@
         "max_concurrent_requests": {
           "type": "integer",
           "title": "Max Concurrent Requests",
-          "description": "Maximum number of concurrent API requests. Lower this value if experiencing rate limiting.",
+          "description": "Maximum number of concurrent API requests. Controls how many HTTP calls can run in parallel across all endpoints. Increase for faster extraction, decrease if experiencing rate limiting.",
           "default": 10,
           "minimum": 1,
           "maximum": 50,
           "propertyOrder": 4
+        },
+        "max_concurrent_endpoints": {
+          "type": "integer",
+          "title": "Max Concurrent Endpoints",
+          "description": "Maximum number of endpoints (tables) to extract simultaneously. Each endpoint holds data in memory, so lower values reduce memory usage. Increase for faster extraction on large backends with more memory.",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 20,
+          "propertyOrder": 5
         }
       },
       "propertyOrder": 3

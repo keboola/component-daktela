@@ -6,17 +6,13 @@ import logging
 import os
 from typing import Any, TYPE_CHECKING
 
-from configuration import DEFAULT_BATCH_SIZE
+from configuration import DEFAULT_BATCH_SIZE, DEFAULT_MAX_CONCURRENT_ENDPOINTS
 from daktela_client import DaktelaApiClient
 from transformer import DataTransformer
 from keboola.component.exceptions import UserException
 
 if TYPE_CHECKING:
     from component import Component
-
-# Maximum number of endpoints to extract concurrently.
-# This limits memory usage when multiple large tables are extracted simultaneously.
-MAX_CONCURRENT_ENDPOINTS = 3
 
 
 class DaktelaExtractor:
@@ -33,6 +29,7 @@ class DaktelaExtractor:
         date_from: str | None = None,
         date_to: str | None = None,
         incremental: bool = False,
+        max_concurrent_endpoints: int = DEFAULT_MAX_CONCURRENT_ENDPOINTS,
     ):
         """
         Initialize extractor.
@@ -47,6 +44,7 @@ class DaktelaExtractor:
             date_from: Start date for filtering (for supported endpoints)
             date_to: End date for filtering (for supported endpoints)
             incremental: Whether to use incremental mode
+            max_concurrent_endpoints: Maximum number of endpoints to extract concurrently
         """
         self.api_client = api_client
         self.table_configs = table_configs
@@ -57,6 +55,7 @@ class DaktelaExtractor:
         self.date_from = date_from
         self.date_to = date_to
         self.incremental = incremental
+        self.max_concurrent_endpoints = max_concurrent_endpoints
         self._table_columns: dict[str, list[str]] = {}
         self._column_definitions = self._load_column_definitions()
 
@@ -90,7 +89,7 @@ class DaktelaExtractor:
         phase1_endpoints = [ep for ep in self.requested_endpoints if ep not in activities_endpoints]
         if phase1_endpoints:
             logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints "
-                         f"(max {MAX_CONCURRENT_ENDPOINTS} concurrent)")
+                         f"(max {self.max_concurrent_endpoints} concurrent)")
             await self._run_endpoints_with_limit(phase1_endpoints)
             logging.info("Phase 1 extraction completed")
 
@@ -98,7 +97,7 @@ class DaktelaExtractor:
         phase2_endpoints = [ep for ep in self.requested_endpoints if ep in activities_endpoints]
         if phase2_endpoints:
             logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints "
-                         f"(max {MAX_CONCURRENT_ENDPOINTS} concurrent)")
+                         f"(max {self.max_concurrent_endpoints} concurrent)")
             await self._run_endpoints_with_limit(phase2_endpoints)
             logging.info("Phase 2 extraction completed")
 
@@ -114,7 +113,7 @@ class DaktelaExtractor:
         Args:
             endpoints: List of endpoint names to extract
         """
-        sem = asyncio.Semaphore(MAX_CONCURRENT_ENDPOINTS)
+        sem = asyncio.Semaphore(self.max_concurrent_endpoints)
 
         async def run_one(endpoint: str) -> None:
             async with sem:

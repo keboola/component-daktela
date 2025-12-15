@@ -23,12 +23,18 @@ class DataSelection(BaseModel):
     date_from: str
     date_to: str
     endpoints: list[str]
+    fields: dict[str, list[str]] | None = None
 
 
 class Destination(BaseModel):
     """Destination configuration."""
 
     incremental: bool = False
+
+
+class Advanced(BaseModel):
+    """Advanced performance configuration."""
+
     batch_size: int = DEFAULT_BATCH_SIZE
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_REQUESTS
     max_concurrent_endpoints: int = DEFAULT_MAX_CONCURRENT_ENDPOINTS
@@ -38,6 +44,7 @@ class Configuration(BaseModel):
     connection: Connection
     data_selection: DataSelection
     destination: Destination = Field(default_factory=Destination)
+    advanced: Advanced = Field(default_factory=Advanced)
     debug: bool = False
 
     def __init__(self, **data):
@@ -47,7 +54,7 @@ class Configuration(BaseModel):
             error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
             raise UserException(f"Validation Error: {', '.join(error_messages)}")
 
-        if self.destination.batch_size <= 0:
+        if self.advanced.batch_size <= 0:
             raise UserException("Batch size must be a positive integer.")
 
         if self.debug:

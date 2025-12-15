@@ -30,6 +30,7 @@ class DaktelaExtractor:
         date_to: str | None = None,
         incremental: bool = False,
         max_concurrent_endpoints: int = DEFAULT_MAX_CONCURRENT_ENDPOINTS,
+        configured_fields: dict[str, list[str]] | None = None,
     ):
         """
         Initialize extractor.
@@ -45,6 +46,7 @@ class DaktelaExtractor:
             date_to: End date for filtering (for supported endpoints)
             incremental: Whether to use incremental mode
             max_concurrent_endpoints: Maximum number of endpoints to extract concurrently
+            configured_fields: User-configured fields per endpoint (optional)
         """
         self.api_client = api_client
         self.table_configs = table_configs
@@ -56,6 +58,7 @@ class DaktelaExtractor:
         self.date_to = date_to
         self.incremental = incremental
         self.max_concurrent_endpoints = max_concurrent_endpoints
+        self.configured_fields = configured_fields or {}
         self._table_columns: dict[str, list[str]] = {}
         self._column_definitions = self._load_column_definitions()
 
@@ -137,6 +140,45 @@ class DaktelaExtractor:
         """Return endpoint override for table if configured."""
         return table_config.get("endpoint", table_name)
 
+    def _get_fields_for_endpoint(self, table_name: str) -> list[str] | None:
+        """
+        Determine which fields to extract for an endpoint.
+
+        Precedence:
+        1. User-configured fields (from configuration)
+        2. Schema from state (from previous runs)
+        3. Static table-columns.json definitions
+        4. None (fetch all fields from API)
+
+        Args:
+            table_name: Name of the endpoint/table
+
+        Returns:
+            List of field names or None to fetch all fields
+        """
+        # 1. User-configured fields take highest priority
+        if table_name in self.configured_fields:
+            fields = self.configured_fields[table_name]
+            if fields:
+                logging.info(f"Using user-configured fields for {table_name}: {len(fields)} fields")
+                return fields
+
+        # 2. Schema from state (previous runs)
+        state_fields = self.component.get_schema_for_endpoint(table_name)
+        if state_fields:
+            logging.info(f"Using schema state fields for {table_name}: {len(state_fields)} fields")
+            return state_fields
+
+        # 3. Static column definitions from table-columns.json
+        file_fields = self._column_definitions.get(table_name)
+        if file_fields:
+            logging.info(f"Using table-columns.json fields for {table_name}: {len(file_fields)} fields")
+            return file_fields
+
+        # 4. No fields specified - will fetch all from API
+        logging.info(f"No field configuration for {table_name}, will fetch all fields from API")
+        return None
+
     async def _extract_table(self, table_name: str):
         """
         Extract a single table using batched processing for memory efficiency.
@@ -158,8 +200,8 @@ class DaktelaExtractor:
         # Table output name
         output_table_name = f"{table_name}.csv"
 
-        # Get fields to fetch from column definitions
-        fields = self._column_definitions.get(table_name)
+        # Get fields to fetch using precedence logic
+        fields = self._get_fields_for_endpoint(table_name)
 
         # Fetch and process data in pages
         total_records = 0
@@ -181,12 +223,16 @@ class DaktelaExtractor:
 
                 # Write in configurable batches to reduce memory footprint
                 if len(write_batch) >= write_batch_size:
-                    total_records += self._write_records(output_table_name, table_config, write_batch)
+                    total_records += self._write_records(
+                        output_table_name, table_config, write_batch, table_name
+                    )
                     write_batch = []
 
             # Write remaining records from this page
             if write_batch:
-                total_records += self._write_records(output_table_name, table_config, write_batch)
+                total_records += self._write_records(
+                    output_table_name, table_config, write_batch, table_name
+                )
 
         # Finalize table (write manifest)
         if total_records > 0:
@@ -220,6 +266,7 @@ class DaktelaExtractor:
         output_table_name: str,
         table_config: dict[str, Any],
         records: list[dict[str, Any]],
+        table_name: str,
     ) -> int:
         """Write a batch of records via the component and return written count."""
         if not records:
@@ -227,6 +274,10 @@ class DaktelaExtractor:
 
         if output_table_name not in self._table_columns:
             self._table_columns[output_table_name] = self._get_columns(records[0])
+            # Update schema state with discovered columns
+            self.component.update_schema_for_endpoint(
+                table_name, self._table_columns[output_table_name]
+            )
 
         self.component.write_table_data(
             table_name=output_table_name,

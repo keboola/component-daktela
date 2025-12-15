@@ -3,8 +3,7 @@
   "title": "Daktela Extractor Configuration",
   "required": [
     "connection",
-    "data_selection",
-    "destination"
+    "data_selection"
   ],
   "properties": {
     "connection": {
@@ -99,6 +98,18 @@
           "description": "List of API endpoints to extract. Common endpoints: contacts, activities, activities_email, tickets, users, statuses. You can specify any valid Daktela API endpoint name (e.g., 'statuses' calls /api/v6/statuses).",
           "uniqueItems": true,
           "propertyOrder": 3
+        },
+        "fields": {
+          "type": "object",
+          "title": "Selected Fields",
+          "description": "Optional: Specify which fields to extract per endpoint. If not specified for an endpoint, all available fields will be extracted. Use the 'List Available Fields' sync action to discover available fields.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "propertyOrder": 4
         }
       },
       "propertyOrder": 2
@@ -114,7 +125,15 @@
           "description": "If enabled, new data will be appended to existing tables. If disabled, existing tables will be replaced.",
           "default": false,
           "propertyOrder": 1
-        },
+        }
+      },
+      "propertyOrder": 3
+    },
+    "advanced": {
+      "type": "object",
+      "title": "Advanced",
+      "description": "Advanced performance settings. Adjust these if you experience timeouts or memory issues.",
+      "properties": {
         "batch_size": {
           "type": "integer",
           "title": "Batch Size",
@@ -122,7 +141,7 @@
           "default": 1000,
           "minimum": 100,
           "maximum": 1000,
-          "propertyOrder": 3
+          "propertyOrder": 1
         },
         "max_concurrent_requests": {
           "type": "integer",
@@ -131,7 +150,7 @@
           "default": 10,
           "minimum": 1,
           "maximum": 50,
-          "propertyOrder": 4
+          "propertyOrder": 2
         },
         "max_concurrent_endpoints": {
           "type": "integer",
@@ -140,10 +159,10 @@
           "default": 3,
           "minimum": 1,
           "maximum": 20,
-          "propertyOrder": 5
+          "propertyOrder": 3
         }
       },
-      "propertyOrder": 3
+      "propertyOrder": 4
     },
     "debug": {
       "type": "boolean",
@@ -151,7 +170,7 @@
       "format": "checkbox",
       "description": "If enabled, the component will produce detailed logs",
       "default": false,
-      "propertyOrder": 4
+      "propertyOrder": 5
     }
   }
 }

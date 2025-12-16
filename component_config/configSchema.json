@@ -68,48 +68,69 @@
           "default": "today",
           "propertyOrder": 2
         },
-        "endpoints": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "accounts",
-              "activities",
-              "activitiesCall",
-              "activitiesChat",
-              "activitiesEmail",
-              "campaignsRecords",
-              "contacts",
-              "crmRecords",
-              "queues",
-              "statuses",
-              "tickets",
-              "users",
-              "groups",
-              "pauses",
-              "templates"
-            ],
-            "type": "string"
-          },
-          "title": "Endpoints to Extract",
-          "format": "select",
+        "discover_fields": {
+          "type": "button",
+          "format": "sync-action",
+          "title": "Discover Available Fields",
           "options": {
-            "tags": true
-          },
-          "description": "List of API endpoints to extract. Common endpoints: contacts, activities, activities_email, tickets, users, statuses. You can specify any valid Daktela API endpoint name (e.g., 'statuses' calls /api/v6/statuses).",
-          "uniqueItems": true,
-          "propertyOrder": 3
-        },
-        "fields": {
-          "type": "object",
-          "title": "Selected Fields",
-          "description": "Optional: Specify which fields to extract per endpoint. If not specified for an endpoint, all available fields will be extracted. Use the 'List Available Fields' sync action to discover available fields.",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string"
+            "async": {
+              "label": "Discover Available Fields",
+              "action": "listFields",
+              "description": "Click to discover all available fields for all configured endpoints below. This will help you fill in the 'fields' property for each endpoint."
             }
           },
-          "propertyOrder": 4
+          "propertyOrder": 2.5
+        },
+        "endpoints": {
+          "type": "array",
+          "title": "Endpoints Configuration",
+          "description": "Configure which endpoints to extract and which fields to include for each. Use 'Discover Available Fields' button above to see available fields, then specify them in each endpoint configuration.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "title": "Endpoint",
+            "required": ["endpoint"],
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "title": "Endpoint",
+                "description": "Select the API endpoint to extract",
+                "enum": [
+                  "accounts",
+                  "activities",
+                  "activitiesCall",
+                  "activitiesChat",
+                  "activitiesEmail",
+                  "campaignsRecords",
+                  "contacts",
+                  "crmRecords",
+                  "queues",
+                  "statuses",
+                  "tickets",
+                  "users",
+                  "groups",
+                  "pauses",
+                  "templates"
+                ],
+                "propertyOrder": 1
+              },
+              "fields": {
+                "type": "array",
+                "title": "Fields to Extract",
+                "description": "Specify which fields to extract for this endpoint (leave empty to extract all fields). You can type field names manually or use the 'Discover Available Fields' button above to see all available fields.",
+                "format": "select",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                },
+                "options": {
+                  "tags": true
+                },
+                "propertyOrder": 2
+              }
+            }
+          },
+          "propertyOrder": 3
         }
       },
       "propertyOrder": 2

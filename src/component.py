@@ -111,7 +111,8 @@ class Component(ComponentBase):
         result: dict[str, list[str]] = {}
 
         async with self._initialize_api_client() as api_client:
-            for endpoint in params.data_selection.endpoints:
+            for endpoint_config in params.data_selection.endpoints:
+                endpoint = endpoint_config.endpoint
                 try:
                     fields = await self._get_endpoint_fields(api_client, endpoint)
                     result[endpoint] = fields
@@ -148,11 +149,15 @@ class Component(ComponentBase):
 
     def _validate_and_get_configuration(self) -> Configuration:
         """Load and validate configuration parameters."""
-        params = Configuration(**self.configuration.parameters)
+        params = Configuration.from_dict(self.configuration.parameters)
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
-        logging.info(f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}")
-        logging.info(f"Endpoints to extract: {params.data_selection.endpoints}")
+        logging.info(
+            f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}"
+        )
+        logging.info(
+            f"Endpoints to extract: {params.data_selection.get_endpoint_names()}"
+        )
         logging.info(f"Incremental mode: {params.destination.incremental}")
 
         return params
@@ -176,12 +181,17 @@ class Component(ComponentBase):
         params = self._require_params()
 
         # Parse dates using keboola utils
-        from_datetime = keboola.utils.get_past_date(params.data_selection.date_from).strftime("%Y-%m-%d %H:%M:%S")
-        to_datetime = keboola.utils.get_past_date(params.data_selection.date_to).strftime("%Y-%m-%d %H:%M:%S")
+        from_datetime = keboola.utils.get_past_date(
+            params.data_selection.date_from
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        to_datetime = keboola.utils.get_past_date(
+            params.data_selection.date_to
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         # Build table configs for each endpoint
         table_configs = {}
-        for endpoint in params.data_selection.endpoints:
+        for endpoint_config in params.data_selection.endpoints:
+            endpoint = endpoint_config.endpoint
             # activitiesCall has different primary key
             if endpoint == "activitiesCall":
                 table_configs[endpoint] = {"primary_keys": ["id_call"]}
@@ -193,13 +203,13 @@ class Component(ComponentBase):
             table_configs=table_configs,
             component=self,
             url=params.connection.url,
-            requested_endpoints=params.data_selection.endpoints,
+            requested_endpoints=params.data_selection.get_endpoint_names(),
             batch_size=params.advanced.batch_size,
             date_from=from_datetime,
             date_to=to_datetime,
             incremental=params.destination.incremental,
             max_concurrent_endpoints=params.advanced.max_concurrent_endpoints,
-            configured_fields=params.data_selection.fields,
+            configured_fields=params.data_selection.get_fields_dict(),
         )
 
     def write_table_data(
@@ -239,13 +249,17 @@ class Component(ComponentBase):
                 writer = csv.DictWriter(f, fieldnames=columns)
                 writer.writeheader()
 
-            logging.info(f"Created table definition for {table_name} with {len(columns)} columns")
+            logging.info(
+                f"Created table definition for {table_name} with {len(columns)} columns"
+            )
 
         # Get table definition
         out_table = table_definitions.get(table_name)
 
         if not out_table:
-            raise UserException(f"Table definition not found for {table_name}. This should not happen.")
+            raise UserException(
+                f"Table definition not found for {table_name}. This should not happen."
+            )
 
         # Append records
         if records:
@@ -271,7 +285,9 @@ class Component(ComponentBase):
             self.write_manifest(out_table)
             logging.info(f"Wrote manifest for {table_name}")
         else:
-            logging.warning(f"No table definition found for {table_name}, skipping manifest")
+            logging.warning(
+                f"No table definition found for {table_name}, skipping manifest"
+            )
 
     def _get_table_definitions(self) -> dict[str, Any]:
         """Return initialized table definitions container."""

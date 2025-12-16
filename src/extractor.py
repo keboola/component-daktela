@@ -1,15 +1,14 @@
 """Main extractor module for Daktela data extraction."""
 
 import asyncio
-import json
 import logging
-import os
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from keboola.component.exceptions import UserException
 
 from configuration import DEFAULT_BATCH_SIZE, DEFAULT_MAX_CONCURRENT_ENDPOINTS
 from daktela_client import DaktelaApiClient
 from transformer import DataTransformer
-from keboola.component.exceptions import UserException
 
 if TYPE_CHECKING:
     from component import Component
@@ -60,7 +59,6 @@ class DaktelaExtractor:
         self.max_concurrent_endpoints = max_concurrent_endpoints
         self.configured_fields = configured_fields or {}
         self._table_columns: dict[str, list[str]] = {}
-        self._column_definitions = self._load_column_definitions()
 
     async def extract_all(self):
         """
@@ -73,7 +71,9 @@ class DaktelaExtractor:
         This is done because activities may depend on data from other tables
         for filtering invalid activities.
         """
-        logging.info(f"Starting extraction for {len(self.requested_endpoints)} endpoints")
+        logging.info(
+            f"Starting extraction for {len(self.requested_endpoints)} endpoints"
+        )
 
         if not self.requested_endpoints:
             raise UserException("No endpoints specified for extraction")
@@ -89,18 +89,26 @@ class DaktelaExtractor:
         }
 
         # Phase 1: Extract all tables except activities-related ones
-        phase1_endpoints = [ep for ep in self.requested_endpoints if ep not in activities_endpoints]
+        phase1_endpoints = [
+            ep for ep in self.requested_endpoints if ep not in activities_endpoints
+        ]
         if phase1_endpoints:
-            logging.info(f"Phase 1: Extracting {len(phase1_endpoints)} endpoints "
-                         f"(max {self.max_concurrent_endpoints} concurrent)")
+            logging.info(
+                f"Phase 1: Extracting {len(phase1_endpoints)} endpoints "
+                f"(max {self.max_concurrent_endpoints} concurrent)"
+            )
             await self._run_endpoints_with_limit(phase1_endpoints)
             logging.info("Phase 1 extraction completed")
 
         # Phase 2: Extract activities-related tables
-        phase2_endpoints = [ep for ep in self.requested_endpoints if ep in activities_endpoints]
+        phase2_endpoints = [
+            ep for ep in self.requested_endpoints if ep in activities_endpoints
+        ]
         if phase2_endpoints:
-            logging.info(f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints "
-                         f"(max {self.max_concurrent_endpoints} concurrent)")
+            logging.info(
+                f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints "
+                f"(max {self.max_concurrent_endpoints} concurrent)"
+            )
             await self._run_endpoints_with_limit(phase2_endpoints)
             logging.info("Phase 2 extraction completed")
 
@@ -124,18 +132,6 @@ class DaktelaExtractor:
 
         await asyncio.gather(*(run_one(ep) for ep in endpoints))
 
-    def _load_column_definitions(self) -> dict[str, list[str]]:
-        """Load column definitions from table-columns.json."""
-        columns_file = os.path.join(os.path.dirname(__file__), "table-columns.json")
-        try:
-            with open(columns_file, "r") as f:
-                data = json.load(f)
-                # Return only the top-level mapping (endpoint -> columns array)
-                return {k: v for k, v in data.items() if isinstance(v, list)}
-        except Exception as e:
-            logging.warning(f"Could not load table-columns.json: {e}")
-            return {}
-
     def _get_table_endpoint(self, table_name: str, table_config: dict[str, Any]) -> str:
         """Return endpoint override for table if configured."""
         return table_config.get("endpoint", table_name)
@@ -147,8 +143,7 @@ class DaktelaExtractor:
         Precedence:
         1. User-configured fields (from configuration)
         2. Schema from state (from previous runs)
-        3. Static table-columns.json definitions
-        4. None (fetch all fields from API)
+        3. None (fetch all fields from API)
 
         Args:
             table_name: Name of the endpoint/table
@@ -160,23 +155,23 @@ class DaktelaExtractor:
         if table_name in self.configured_fields:
             fields = self.configured_fields[table_name]
             if fields:
-                logging.info(f"Using user-configured fields for {table_name}: {len(fields)} fields")
+                logging.info(
+                    f"Using user-configured fields for {table_name}: {len(fields)} fields"
+                )
                 return fields
 
         # 2. Schema from state (previous runs)
         state_fields = self.component.get_schema_for_endpoint(table_name)
         if state_fields:
-            logging.info(f"Using schema state fields for {table_name}: {len(state_fields)} fields")
+            logging.info(
+                f"Using schema state fields for {table_name}: {len(state_fields)} fields"
+            )
             return state_fields
 
-        # 3. Static column definitions from table-columns.json
-        file_fields = self._column_definitions.get(table_name)
-        if file_fields:
-            logging.info(f"Using table-columns.json fields for {table_name}: {len(file_fields)} fields")
-            return file_fields
-
-        # 4. No fields specified - will fetch all from API
-        logging.info(f"No field configuration for {table_name}, will fetch all fields from API")
+        # 3. No fields specified - will fetch all from API
+        logging.info(
+            f"No field configuration for {table_name}, will fetch all fields from API"
+        )
         return None
 
     async def _extract_table(self, table_name: str):
@@ -237,7 +232,9 @@ class DaktelaExtractor:
         # Finalize table (write manifest)
         if total_records > 0:
             self.component.finalize_table(output_table_name)
-            logging.info(f"Completed extraction for table: {table_name} ({total_records} records)")
+            logging.info(
+                f"Completed extraction for table: {table_name} ({total_records} records)"
+            )
         else:
             logging.warning(f"No data found for table: {table_name}")
 

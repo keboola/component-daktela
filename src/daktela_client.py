@@ -6,14 +6,15 @@ Retry logic is handled by the Keboola AsyncHttpClient.
 import asyncio
 import logging
 import warnings
-import requests
-import httpx
+from collections.abc import AsyncIterator
 from typing import Any
 
-from keboola.http_client import AsyncHttpClient
+import httpx
+import requests
 from keboola.component.exceptions import UserException
+from keboola.http_client import AsyncHttpClient
 
-from configuration import DEFAULT_MAX_CONCURRENT_REQUESTS, DEFAULT_BATCH_SIZE
+from configuration import DEFAULT_BATCH_SIZE, DEFAULT_MAX_CONCURRENT_REQUESTS
 
 # API Client constants
 DEFAULT_PAGE_LIMIT = 1000
@@ -21,6 +22,9 @@ DEFAULT_PAGE_LIMIT = 1000
 
 AUTH_TIMEOUT_SECONDS = 30
 """Timeout for authentication requests."""
+
+MAX_AUTH_RETRIES = 2
+"""Maximum number of authentication retry attempts."""
 
 # Endpoints that support date filtering via filter[field]=edited
 FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts"}
@@ -87,7 +91,9 @@ class DaktelaApiClient:
             logging.info(f"Attempting to authenticate with Daktela API at {self.url}")
             if not self.verify_ssl:
                 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-                logging.warning("SSL verification is disabled for authentication. This is insecure.")
+                logging.warning(
+                    "SSL verification is disabled for authentication. This is insecure."
+                )
 
             response = requests.post(
                 login_url,
@@ -107,11 +113,15 @@ class DaktelaApiClient:
             try:
                 result = response.json()
             except Exception as e:
-                raise UserException(f"Failed to parse authentication response: {str(e)}")
+                raise UserException(
+                    f"Failed to parse authentication response: {str(e)}"
+                )
 
             # Extract access token
             if "result" not in result or not result["result"]:
-                raise UserException(f"Invalid token in authentication response. Response: {response.text[:200]}")
+                raise UserException(
+                    f"Invalid token in authentication response. Response: {response.text[:200]}"
+                )
 
             # Extract just the accessToken string from the result object
             token_data = result["result"]
@@ -127,9 +137,13 @@ class DaktelaApiClient:
             return access_token
 
         except requests.exceptions.ConnectionError as e:
-            raise UserException(f"Server not responding. Failed to connect to {self.url}: {str(e)}")
+            raise UserException(
+                f"Server not responding. Failed to connect to {self.url}: {str(e)}"
+            )
         except requests.exceptions.Timeout as e:
-            raise UserException(f"Connection timeout when connecting to {self.url}: {str(e)}")
+            raise UserException(
+                f"Connection timeout when connecting to {self.url}: {str(e)}"
+            )
         except requests.exceptions.RequestException as e:
             raise UserException(f"Request failed: {str(e)}")
 
@@ -179,7 +193,7 @@ class DaktelaApiClient:
         batch_size: int = DEFAULT_BATCH_SIZE,
         endpoint: str | None = None,
         fields: list[str] | None = None,
-    ):
+    ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Fetch data for a table in pages (generator for memory efficiency).
 
@@ -238,7 +252,10 @@ class DaktelaApiClient:
             params["fields"] = ",".join(fields)
 
         # Apply date filtering for supported endpoints
-        if table_name in FILTER_PAGINATED_ENDPOINTS or table_name in ACTIVITIES_FILTER_FIELDS:
+        if (
+            table_name in FILTER_PAGINATED_ENDPOINTS
+            or table_name in ACTIVITIES_FILTER_FIELDS
+        ):
             filters = []
             if table_name in FILTER_PAGINATED_ENDPOINTS:
                 filter_field = "edited"
@@ -246,10 +263,14 @@ class DaktelaApiClient:
                 filter_field = ACTIVITIES_FILTER_FIELDS[table_name]
 
             if date_from:
-                filters.append({"field": filter_field, "operator": "gte", "value": date_from})
+                filters.append(
+                    {"field": filter_field, "operator": "gte", "value": date_from}
+                )
 
             if date_to:
-                filters.append({"field": filter_field, "operator": "lte", "value": date_to})
+                filters.append(
+                    {"field": filter_field, "operator": "lte", "value": date_to}
+                )
 
             if len(filters) == 2:
                 # Both dates: use URL parameter format (not JSON format)
@@ -263,7 +284,9 @@ class DaktelaApiClient:
             elif len(filters) == 1:
                 # Single date: use simple format
                 f = filters[0]
-                logging.info(f"Date filter for {table_name}: {f['field']} {f['operator']} {f['value']}")
+                logging.info(
+                    f"Date filter for {table_name}: {f['field']} {f['operator']} {f['value']}"
+                )
                 params["filter[field]"] = f["field"]
                 params["filter[operator]"] = f["operator"]
                 params["filter[value]"] = f["value"]
@@ -294,7 +317,9 @@ class DaktelaApiClient:
                 if fields:
                     params["fields"] = ",".join(fields)
                     params_count["fields"] = ",".join(fields)
-                first_response = await self.client.get(endpoint_path, params=params_count)
+                first_response = await self.client.get(
+                    endpoint_path, params=params_count
+                )
             else:
                 raise
 
@@ -303,7 +328,9 @@ class DaktelaApiClient:
             return
 
         total = first_response["result"].get("total", 0)
-        logging.info(f"Table {table_name}: Total entries: {total}, Batches: {(total + page_limit - 1) // page_limit}")
+        logging.info(
+            f"Table {table_name}: Total entries: {total}, Batches: {(total + page_limit - 1) // page_limit}"
+        )
 
         if total == 0:
             return
@@ -314,7 +341,9 @@ class DaktelaApiClient:
             params_page["skip"] = offset
             params_page["take"] = page_limit
 
-            records = await self._fetch_page(endpoint_path, params_page, table_name, offset)
+            records = await self._fetch_page(
+                endpoint_path, params_page, table_name, offset
+            )
 
             if records:
                 logging.debug(f"Yielding page of {len(records)} records")
@@ -362,7 +391,9 @@ class DaktelaApiClient:
             return []
 
         total = first_response["result"].get("total", 0)
-        logging.info(f"Table {table_name}: Total entries: {total}, Batches: {(total + limit - 1) // limit}")
+        logging.info(
+            f"Table {table_name}: Total entries: {total}, Batches: {(total + limit - 1) // limit}"
+        )
 
         if total == 0:
             return []
@@ -423,7 +454,7 @@ class DaktelaApiClient:
         Returns:
             List of records from this page
         """
-        for attempt in range(2):
+        for attempt in range(MAX_AUTH_RETRIES):
             # Capture current token version for double-check locking
             token_version = self._token_version
 
@@ -442,7 +473,7 @@ class DaktelaApiClient:
                 return data if isinstance(data, list) else []
 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 401 and attempt == 0:
+                if e.response.status_code == 401 and attempt < MAX_AUTH_RETRIES - 1:
                     logging.warning(
                         f"Token expired for {table_name} at offset {offset}, refreshing..."
                     )

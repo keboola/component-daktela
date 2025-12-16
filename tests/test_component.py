@@ -23,7 +23,10 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "7 days ago",
                 "date_to": "today",
-                "endpoints": ["contacts", "activities"]
+                "endpoints": [
+                    {"endpoint": "contacts"},
+                    {"endpoint": "activities"}
+                ]
             }
         )
 
@@ -42,7 +45,7 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "7 days ago",
                 "date_to": "today",
-                "endpoints": ["contacts"]
+                "endpoints": [{"endpoint": "contacts"}]
             }
         )
 
@@ -51,18 +54,18 @@ class TestConfiguration(unittest.TestCase):
     def test_missing_url(self):
         """Test validation fails when URL is missing."""
         with self.assertRaises(UserException):
-            Configuration(
-                connection={
+            Configuration.from_dict({
+                "connection": {
                     "username": "test",
                     "#password": "test"
                     # Missing required 'url' field
                 },
-                data_selection={
+                "data_selection": {
                     "date_from": "7 days ago",
                     "date_to": "today",
-                    "endpoints": ["contacts"]
+                    "endpoints": [{"endpoint": "contacts"}]
                 }
-            )
+            })
 
     def test_endpoints_list_parsing(self):
         """Test endpoints list parsing."""
@@ -75,15 +78,20 @@ class TestConfiguration(unittest.TestCase):
             data_selection={
                 "date_from": "7 days ago",
                 "date_to": "today",
-                "endpoints": ["contacts", "activities", "tickets"]
+                "endpoints": [
+                    {"endpoint": "contacts"},
+                    {"endpoint": "activities"},
+                    {"endpoint": "tickets"}
+                ]
             }
         )
 
         endpoints = config.data_selection.endpoints
         self.assertEqual(len(endpoints), 3)
-        self.assertIn("contacts", endpoints)
-        self.assertIn("activities", endpoints)
-        self.assertIn("tickets", endpoints)
+        endpoint_names = [ep.endpoint for ep in endpoints]
+        self.assertIn("contacts", endpoint_names)
+        self.assertIn("activities", endpoint_names)
+        self.assertIn("tickets", endpoint_names)
 
 
 if __name__ == "__main__":

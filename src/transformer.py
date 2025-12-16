@@ -12,9 +12,10 @@ The transformation pipeline ensures data consistency and compatibility with
 Keboola Storage tables.
 """
 
-import re
 import logging
+import re
 from typing import Any
+
 from keboola.utils.header_normalizer import DefaultHeaderNormalizer
 
 
@@ -77,9 +78,13 @@ class DataTransformer:
                 output_count += 1
                 yield final_row
 
-        logging.info(f"Transformed {input_count} records into {output_count} rows for table {self.table_name}")
+        logging.info(
+            f"Transformed {input_count} records into {output_count} rows for table {self.table_name}"
+        )
 
-    def _flatten_json(self, data: dict[str, Any], parent_key: str = "", level: int = 0) -> dict[str, Any]:
+    def _flatten_json(
+        self, data: dict[str, Any], parent_key: str = "", level: int = 0
+    ) -> dict[str, Any]:
         """
         Flatten nested JSON dictionaries up to 2 levels.
 

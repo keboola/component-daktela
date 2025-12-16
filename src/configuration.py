@@ -23,31 +23,22 @@ class Connection(BaseModel):
     verify_ssl: bool = True
 
 
-class EndpointConfig(BaseModel):
-    """Configuration for a single endpoint extraction."""
+class RowConfiguration(BaseModel):
+    """Row configuration for a single endpoint extraction."""
 
     endpoint: str
-    fields: list[str] | None = None
-
-
-class DataSelection(BaseModel):
-    """Data selection configuration."""
-
     date_from: str
     date_to: str
-    endpoints: list[EndpointConfig]
+    fields: list[str] | None = None
 
-    def get_endpoint_names(self) -> list[str]:
-        """Get list of endpoint names."""
-        return [ep.endpoint for ep in self.endpoints]
-
-    def get_fields_dict(self) -> dict[str, list[str]]:
-        """Get fields configuration as a dictionary (for backward compatibility)."""
-        result = {}
-        for ep in self.endpoints:
-            if ep.fields:
-                result[ep.endpoint] = ep.fields
-        return result if result else None
+    @classmethod
+    def from_dict(cls, data: dict) -> "RowConfiguration":
+        """Create RowConfiguration from dict with user-friendly error messages."""
+        try:
+            return cls(**data)
+        except ValidationError as e:
+            error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            raise UserException(f"Row validation error: {', '.join(error_messages)}")
 
 
 class Destination(BaseModel):
@@ -73,8 +64,9 @@ class Advanced(BaseModel):
 
 
 class Configuration(BaseModel):
+    """Global configuration (from configSchema.json)."""
+
     connection: Connection
-    data_selection: DataSelection
     destination: Destination = Field(default_factory=Destination)
     advanced: Advanced = Field(default_factory=Advanced)
     debug: bool = False

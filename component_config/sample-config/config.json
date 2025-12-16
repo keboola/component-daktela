@@ -16,16 +16,33 @@
       "#password": "test_password",
       "verify_ssl": true
     },
-    "data_selection": {
-      "date_from": "7 days ago",
-      "date_to": "today",
-      "endpoints": ["contacts", "activities", "tickets"]
-    },
     "destination": {
-      "incremental": false,
-      "batch_size": 10000,
-      "max_concurrent_requests": 10
+      "incremental": false
+    },
+    "advanced": {
+      "batch_size": 1000,
+      "max_concurrent_requests": 10,
+      "max_concurrent_endpoints": 3
     },
     "debug": true
-  }
+  },
+  "image_parameters": [
+    {
+      "endpoint": "contacts",
+      "date_from": "7 days ago",
+      "date_to": "today",
+      "fields": ["name", "email", "phone"]
+    },
+    {
+      "endpoint": "activities",
+      "date_from": "3 days ago",
+      "date_to": "today"
+    },
+    {
+      "endpoint": "tickets",
+      "date_from": "7 days ago",
+      "date_to": "today",
+      "fields": ["title", "status", "priority", "created"]
+    }
+  ]
 }

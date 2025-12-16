@@ -14,7 +14,7 @@ import keboola.utils
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 
-from configuration import Configuration
+from configuration import Configuration, RowConfiguration
 from daktela_client import DaktelaApiClient
 from extractor import DaktelaExtractor
 
@@ -30,13 +30,25 @@ class Component(ComponentBase):
     def __init__(self) -> None:
         super().__init__()
         self.params: Configuration | None = None
+        self.row_configs: list[RowConfiguration] = []
         self._table_definitions: dict[str, Any] = {}
         self._schema_state: dict[str, Any] = {}
 
     def run(self) -> None:
         """Main execution - orchestrates the component workflow."""
         try:
+            # Load and validate global configuration
             self.params = self._validate_and_get_configuration()
+
+            # Load and validate row configurations
+            self.row_configs = self._load_row_configurations()
+
+            if not self.row_configs:
+                raise UserException(
+                    "No endpoint configurations found. Please add at least one row configuration."
+                )
+
+            logging.info(f"Loaded {len(self.row_configs)} endpoint configurations")
 
             # Load schema state from previous runs
             self._load_schema_state()
@@ -91,37 +103,40 @@ class Component(ComponentBase):
     @sync_action("listFields")
     def list_fields(self) -> dict[str, Any]:
         """
-        Sync action to list all available fields for each endpoint.
+        Sync action to list available fields for the current row's endpoint.
 
-        Returns a dictionary mapping endpoint names to their available fields.
+        In row config mode, this is called for a specific row.
+        Returns a dictionary with the endpoint name and its available fields.
         """
+        # Load global configuration
         self.params = self._validate_and_get_configuration()
 
-        logging.info("Running listFields sync action")
+        # In row config mode, the current row data is in configuration.parameters
+        row_data = self.configuration.parameters
+        try:
+            row_config = RowConfiguration.from_dict(row_data)
+        except Exception as e:
+            logging.error(f"Failed to load row configuration for sync action: {e}")
+            return {"error": f"Invalid row configuration: {e}"}
 
-        # Run async field discovery
-        result = asyncio.run(self._discover_fields_async())
+        logging.info(f"Running listFields sync action for endpoint: {row_config.endpoint}")
 
-        logging.info(f"Discovered fields for {len(result)} endpoints")
-        return result
+        # Run async field discovery for this endpoint
+        result = asyncio.run(self._discover_fields_async(row_config.endpoint))
 
-    async def _discover_fields_async(self) -> dict[str, list[str]]:
-        """Discover available fields for all requested endpoints."""
-        params = self._require_params()
-        result: dict[str, list[str]] = {}
+        logging.info(f"Discovered {len(result)} fields for {row_config.endpoint}")
+        return {row_config.endpoint: result}
 
+    async def _discover_fields_async(self, endpoint: str) -> list[str]:
+        """Discover available fields for a single endpoint."""
         async with self._initialize_api_client() as api_client:
-            for endpoint_config in params.data_selection.endpoints:
-                endpoint = endpoint_config.endpoint
-                try:
-                    fields = await self._get_endpoint_fields(api_client, endpoint)
-                    result[endpoint] = fields
-                    logging.info(f"Discovered {len(fields)} fields for {endpoint}")
-                except Exception as e:
-                    logging.warning(f"Failed to discover fields for {endpoint}: {e}")
-                    result[endpoint] = []
-
-        return result
+            try:
+                fields = await self._get_endpoint_fields(api_client, endpoint)
+                logging.info(f"Discovered {len(fields)} fields for {endpoint}")
+                return fields
+            except Exception as e:
+                logging.warning(f"Failed to discover fields for {endpoint}: {e}")
+                return []
 
     async def _get_endpoint_fields(
         self, api_client: DaktelaApiClient, endpoint: str
@@ -141,26 +156,50 @@ class Component(ComponentBase):
         return []
 
     async def _run_async_extraction(self) -> None:
-        """Run the async extraction process."""
+        """Run the async extraction process for all row configurations."""
         # Use async context manager for API client (auth happens in __init__)
         async with self._initialize_api_client() as api_client:
-            extractor = self._create_extractor(api_client)
-            await extractor.extract_all()
+            # Process each row configuration
+            for idx, row_config in enumerate(self.row_configs):
+                logging.info(
+                    f"Processing row {idx+1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
+                )
+                extractor = self._create_extractor(api_client, row_config)
+                await extractor.extract_all()
 
     def _validate_and_get_configuration(self) -> Configuration:
-        """Load and validate configuration parameters."""
+        """Load and validate global configuration parameters."""
         params = Configuration.from_dict(self.configuration.parameters)
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
-        logging.info(
-            f"Date range: {params.data_selection.date_from} to {params.data_selection.date_to}"
-        )
-        logging.info(
-            f"Endpoints to extract: {params.data_selection.get_endpoint_names()}"
-        )
         logging.info(f"Incremental mode: {params.destination.incremental}")
 
         return params
+
+    def _load_row_configurations(self) -> list[RowConfiguration]:
+        """Load and validate row configurations from image_parameters."""
+        row_configs = []
+
+        # In row config mode, configurations come from image_parameters
+        image_params = getattr(self.configuration, "image_parameters", [])
+
+        if not image_params:
+            logging.warning("No row configurations found in image_parameters")
+            return []
+
+        for idx, row_data in enumerate(image_params):
+            try:
+                row_config = RowConfiguration.from_dict(row_data)
+                row_configs.append(row_config)
+                logging.info(
+                    f"Row {idx+1}: endpoint={row_config.endpoint}, "
+                    f"date_from={row_config.date_from}, date_to={row_config.date_to}"
+                )
+            except Exception as e:
+                logging.error(f"Failed to load row configuration {idx+1}: {e}")
+                raise UserException(f"Invalid row configuration {idx+1}: {e}")
+
+        return row_configs
 
     def _initialize_api_client(self) -> DaktelaApiClient:
         """Initialize and return configured API client (authenticates during init)."""
@@ -176,40 +215,46 @@ class Component(ComponentBase):
     def _create_extractor(
         self,
         api_client: DaktelaApiClient,
+        row_config: RowConfiguration,
     ) -> DaktelaExtractor:
-        """Create and configure the extractor."""
+        """Create and configure the extractor for a single row configuration."""
         params = self._require_params()
 
         # Parse dates using keboola utils
         from_datetime = keboola.utils.get_past_date(
-            params.data_selection.date_from
+            row_config.date_from
         ).strftime("%Y-%m-%d %H:%M:%S")
         to_datetime = keboola.utils.get_past_date(
-            params.data_selection.date_to
+            row_config.date_to
         ).strftime("%Y-%m-%d %H:%M:%S")
 
-        # Build table configs for each endpoint
+        # Build table config for this endpoint
+        endpoint = row_config.endpoint
         table_configs = {}
-        for endpoint_config in params.data_selection.endpoints:
-            endpoint = endpoint_config.endpoint
-            # activitiesCall has different primary key
-            if endpoint == "activitiesCall":
-                table_configs[endpoint] = {"primary_keys": ["id_call"]}
-            else:
-                table_configs[endpoint] = {"primary_keys": ["name"]}
+
+        # activitiesCall has different primary key
+        if endpoint == "activitiesCall":
+            table_configs[endpoint] = {"primary_keys": ["id_call"]}
+        else:
+            table_configs[endpoint] = {"primary_keys": ["name"]}
+
+        # Prepare configured fields dict (only for this endpoint)
+        configured_fields = {}
+        if row_config.fields:
+            configured_fields[endpoint] = row_config.fields
 
         return DaktelaExtractor(
             api_client=api_client,
             table_configs=table_configs,
             component=self,
             url=params.connection.url,
-            requested_endpoints=params.data_selection.get_endpoint_names(),
+            requested_endpoints=[endpoint],
             batch_size=params.advanced.batch_size,
             date_from=from_datetime,
             date_to=to_datetime,
             incremental=params.destination.incremental,
             max_concurrent_endpoints=params.advanced.max_concurrent_endpoints,
-            configured_fields=params.data_selection.get_fields_dict(),
+            configured_fields=configured_fields if configured_fields else None,
         )
 
     def write_table_data(

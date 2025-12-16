@@ -2,8 +2,7 @@
   "type": "object",
   "title": "Daktela Extractor Configuration",
   "required": [
-    "connection",
-    "data_selection"
+    "connection"
   ],
   "properties": {
     "connection": {
@@ -45,96 +44,6 @@
       },
       "propertyOrder": 1
     },
-    "data_selection": {
-      "type": "object",
-      "title": "Data Selection",
-      "required": [
-        "date_from",
-        "date_to",
-        "endpoints"
-      ],
-      "properties": {
-        "date_from": {
-          "type": "string",
-          "title": "Date From",
-          "description": "Start date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'. Used as filter for tickets, contacts, and activities endpoints.",
-          "default": "7 days ago",
-          "propertyOrder": 1
-        },
-        "date_to": {
-          "type": "string",
-          "title": "Date To",
-          "description": "End date for extraction. Supported formats: 'today', 'yesterday', '5 hours ago', '3 days ago', '4 months ago', '2 years ago'. Used as filter for tickets, contacts, and activities endpoints.",
-          "default": "today",
-          "propertyOrder": 2
-        },
-        "discover_fields": {
-          "type": "button",
-          "format": "sync-action",
-          "title": "Discover Available Fields",
-          "options": {
-            "async": {
-              "label": "Discover Available Fields",
-              "action": "listFields",
-              "description": "Click to discover all available fields for all configured endpoints below. This will help you fill in the 'fields' property for each endpoint."
-            }
-          },
-          "propertyOrder": 2.5
-        },
-        "endpoints": {
-          "type": "array",
-          "title": "Endpoints Configuration",
-          "description": "Configure which endpoints to extract and which fields to include for each. Use 'Discover Available Fields' button above to see available fields, then specify them in each endpoint configuration.",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "title": "Endpoint",
-            "required": ["endpoint"],
-            "properties": {
-              "endpoint": {
-                "type": "string",
-                "title": "Endpoint",
-                "description": "Select the API endpoint to extract",
-                "enum": [
-                  "accounts",
-                  "activities",
-                  "activitiesCall",
-                  "activitiesChat",
-                  "activitiesEmail",
-                  "campaignsRecords",
-                  "contacts",
-                  "crmRecords",
-                  "queues",
-                  "statuses",
-                  "tickets",
-                  "users",
-                  "groups",
-                  "pauses",
-                  "templates"
-                ],
-                "propertyOrder": 1
-              },
-              "fields": {
-                "type": "array",
-                "title": "Fields to Extract",
-                "description": "Specify which fields to extract for this endpoint (leave empty to extract all fields). You can type field names manually or use the 'Discover Available Fields' button above to see all available fields.",
-                "format": "select",
-                "uniqueItems": true,
-                "items": {
-                  "type": "string"
-                },
-                "options": {
-                  "tags": true
-                },
-                "propertyOrder": 2
-              }
-            }
-          },
-          "propertyOrder": 3
-        }
-      },
-      "propertyOrder": 2
-    },
     "destination": {
       "type": "object",
       "title": "Destination",
@@ -148,7 +57,7 @@
           "propertyOrder": 1
         }
       },
-      "propertyOrder": 3
+      "propertyOrder": 2
     },
     "advanced": {
       "type": "object",
@@ -176,14 +85,14 @@
         "max_concurrent_endpoints": {
           "type": "integer",
           "title": "Max Concurrent Endpoints",
-          "description": "Maximum number of endpoints (tables) to extract simultaneously. Each endpoint holds data in memory, so lower values reduce memory usage. Increase for faster extraction on large backends with more memory.",
+          "description": "Maximum number of endpoints (rows) to extract simultaneously. Each endpoint holds data in memory, so lower values reduce memory usage. Increase for faster extraction on large backends with more memory.",
           "default": 3,
           "minimum": 1,
           "maximum": 20,
           "propertyOrder": 3
         }
       },
-      "propertyOrder": 4
+      "propertyOrder": 3
     },
     "debug": {
       "type": "boolean",
@@ -191,7 +100,7 @@
       "format": "checkbox",
       "description": "If enabled, the component will produce detailed logs",
       "default": false,
-      "propertyOrder": 5
+      "propertyOrder": 4
     }
   }
 }

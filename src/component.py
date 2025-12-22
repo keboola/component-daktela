@@ -100,6 +100,60 @@ class Component(ComponentBase):
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
+    @sync_action("testConnection")
+    def test_connection(self) -> dict[str, str]:
+        """
+        Sync action to test connection to Daktela API.
+
+        Validates credentials by attempting to authenticate with the API.
+        Returns success/error status with a message.
+        """
+        try:
+            # Get connection parameters
+            params = self.configuration.parameters
+            connection = params.get("connection", {})
+            url = connection.get("url")
+            username = connection.get("username")
+            password = connection.get("#password")
+            verify_ssl = connection.get("verify_ssl", True)
+
+            if not url:
+                raise UserException("URL is required")
+            if not username:
+                raise UserException("Username is required")
+            if not password:
+                raise UserException("Password is required")
+
+            logging.info(f"Testing connection to {url}")
+
+            # Test connection by attempting to authenticate
+            result = asyncio.run(
+                self._test_connection_async(url, username, password, verify_ssl)
+            )
+
+            return result
+
+        except UserException as e:
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            logging.exception("Connection test failed")
+            return {"status": "error", "message": f"Connection failed: {e}"}
+
+    async def _test_connection_async(
+        self, url: str, username: str, password: str, verify_ssl: bool
+    ) -> dict[str, str]:
+        """Test connection to Daktela API asynchronously."""
+        api_client = DaktelaApiClient(
+            url=url,
+            username=username,
+            password=password,
+            max_concurrent=1,
+            verify_ssl=verify_ssl,
+        )
+        async with api_client:
+            # If we get here, authentication was successful
+            return {"status": "success", "message": "Connection successful"}
+
     @sync_action("listFields")
     def list_fields(self) -> dict[str, Any]:
         """
@@ -119,7 +173,9 @@ class Component(ComponentBase):
             logging.error(f"Failed to load row configuration for sync action: {e}")
             return {"error": f"Invalid row configuration: {e}"}
 
-        logging.info(f"Running listFields sync action for endpoint: {row_config.endpoint}")
+        logging.info(
+            f"Running listFields sync action for endpoint: {row_config.endpoint}"
+        )
 
         # Run async field discovery for this endpoint
         result = asyncio.run(self._discover_fields_async(row_config.endpoint))
@@ -162,7 +218,7 @@ class Component(ComponentBase):
             # Process each row configuration
             for idx, row_config in enumerate(self.row_configs):
                 logging.info(
-                    f"Processing row {idx+1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
+                    f"Processing row {idx + 1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
                 )
                 extractor = self._create_extractor(api_client, row_config)
                 await extractor.extract_all()
@@ -192,12 +248,12 @@ class Component(ComponentBase):
                 row_config = RowConfiguration.from_dict(row_data)
                 row_configs.append(row_config)
                 logging.info(
-                    f"Row {idx+1}: endpoint={row_config.endpoint}, "
+                    f"Row {idx + 1}: endpoint={row_config.endpoint}, "
                     f"date_from={row_config.date_from}, date_to={row_config.date_to}"
                 )
             except Exception as e:
-                logging.error(f"Failed to load row configuration {idx+1}: {e}")
-                raise UserException(f"Invalid row configuration {idx+1}: {e}")
+                logging.error(f"Failed to load row configuration {idx + 1}: {e}")
+                raise UserException(f"Invalid row configuration {idx + 1}: {e}")
 
         return row_configs
 
@@ -221,12 +277,12 @@ class Component(ComponentBase):
         params = self._require_params()
 
         # Parse dates using keboola utils
-        from_datetime = keboola.utils.get_past_date(
-            row_config.date_from
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        to_datetime = keboola.utils.get_past_date(
-            row_config.date_to
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        from_datetime = keboola.utils.get_past_date(row_config.date_from).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        to_datetime = keboola.utils.get_past_date(row_config.date_to).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
         # Build table config for this endpoint
         endpoint = row_config.endpoint

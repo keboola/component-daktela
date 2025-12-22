@@ -23,6 +23,13 @@ class Connection(BaseModel):
     verify_ssl: bool = True
 
 
+class RowDestination(BaseModel):
+    """Row-level destination configuration."""
+
+    incremental: bool = False
+    primary_key: list[str] | None = None
+
+
 class RowConfiguration(BaseModel):
     """Row configuration for a single endpoint extraction."""
 
@@ -30,6 +37,7 @@ class RowConfiguration(BaseModel):
     date_from: str
     date_to: str
     fields: list[str] | None = None
+    destination: RowDestination = Field(default_factory=RowDestination)
 
     @classmethod
     def from_dict(cls, data: dict) -> "RowConfiguration":
@@ -39,12 +47,6 @@ class RowConfiguration(BaseModel):
         except ValidationError as e:
             error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
             raise UserException(f"Row validation error: {', '.join(error_messages)}")
-
-
-class Destination(BaseModel):
-    """Destination configuration."""
-
-    incremental: bool = False
 
 
 class Advanced(BaseModel):
@@ -67,7 +69,6 @@ class Configuration(BaseModel):
     """Global configuration (from configSchema.json)."""
 
     connection: Connection
-    destination: Destination = Field(default_factory=Destination)
     advanced: Advanced = Field(default_factory=Advanced)
     debug: bool = False
 

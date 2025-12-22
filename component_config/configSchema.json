@@ -44,21 +44,6 @@
       },
       "propertyOrder": 1
     },
-    "destination": {
-      "type": "object",
-      "title": "Destination",
-      "properties": {
-        "incremental": {
-          "type": "boolean",
-          "title": "Incremental Load",
-          "format": "checkbox",
-          "description": "If enabled, new data will be appended to existing tables. If disabled, existing tables will be replaced.",
-          "default": false,
-          "propertyOrder": 1
-        }
-      },
-      "propertyOrder": 2
-    },
     "advanced": {
       "type": "object",
       "title": "Advanced",
@@ -92,7 +77,7 @@
           "propertyOrder": 3
         }
       },
-      "propertyOrder": 3
+      "propertyOrder": 2
     },
     "debug": {
       "type": "boolean",
@@ -100,7 +85,7 @@
       "format": "checkbox",
       "description": "If enabled, the component will produce detailed logs",
       "default": false,
-      "propertyOrder": 4
+      "propertyOrder": 3
     }
   }
 }

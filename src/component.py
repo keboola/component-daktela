@@ -172,7 +172,6 @@ class Component(ComponentBase):
         params = Configuration.from_dict(self.configuration.parameters)
 
         logging.info(f"Starting Daktela extraction from {params.connection.url}")
-        logging.info(f"Incremental mode: {params.destination.incremental}")
 
         return params
 
@@ -193,7 +192,8 @@ class Component(ComponentBase):
                 row_configs.append(row_config)
                 logging.info(
                     f"Row {idx+1}: endpoint={row_config.endpoint}, "
-                    f"date_from={row_config.date_from}, date_to={row_config.date_to}"
+                    f"date_from={row_config.date_from}, date_to={row_config.date_to}, "
+                    f"incremental={row_config.destination.incremental}"
                 )
             except Exception as e:
                 logging.error(f"Failed to load row configuration {idx+1}: {e}")
@@ -232,11 +232,15 @@ class Component(ComponentBase):
         endpoint = row_config.endpoint
         table_configs = {}
 
-        # activitiesCall has different primary key
-        if endpoint == "activitiesCall":
-            table_configs[endpoint] = {"primary_keys": ["id_call"]}
+        # Use primary_key from config if set, otherwise use defaults
+        if row_config.destination.primary_key:
+            primary_keys = row_config.destination.primary_key
+        elif endpoint == "activitiesCall":
+            primary_keys = ["id_call"]
         else:
-            table_configs[endpoint] = {"primary_keys": ["name"]}
+            primary_keys = ["name"]
+
+        table_configs[endpoint] = {"primary_keys": primary_keys}
 
         # Prepare configured fields dict (only for this endpoint)
         configured_fields = {}
@@ -252,7 +256,7 @@ class Component(ComponentBase):
             batch_size=params.advanced.batch_size,
             date_from=from_datetime,
             date_to=to_datetime,
-            incremental=params.destination.incremental,
+            incremental=row_config.destination.incremental,
             max_concurrent_endpoints=params.advanced.max_concurrent_endpoints,
             configured_fields=configured_fields if configured_fields else None,
         )

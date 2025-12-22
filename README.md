@@ -1,4 +1,4 @@
-# Daktela Extractor
+se# Daktela Extractor
 
 Keboola component for extracting data from Daktela CRM/Contact Center API v6.
 

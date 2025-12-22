@@ -59,7 +59,6 @@ class TestConfiguration(unittest.TestCase):
             }
         )
 
-        self.assertEqual(config.destination.incremental, False)
         self.assertEqual(config.advanced.batch_size, 1000)
         self.assertEqual(config.advanced.max_concurrent_requests, 10)
         self.assertEqual(config.advanced.max_concurrent_endpoints, 3)
@@ -81,6 +80,8 @@ class TestRowConfiguration(unittest.TestCase):
         self.assertEqual(row_config.date_from, "7 days ago")
         self.assertEqual(row_config.date_to, "today")
         self.assertIsNone(row_config.fields)
+        self.assertEqual(row_config.destination.incremental, False)
+        self.assertIsNone(row_config.destination.primary_key)
 
     def test_row_configuration_with_fields(self):
         """Test row configuration with fields specified."""

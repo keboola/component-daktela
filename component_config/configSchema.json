@@ -42,12 +42,15 @@
           "propertyOrder": 4
         }
       },
-      "propertyOrder": 1
+      "propertyOrder": 100
     },
     "advanced": {
       "type": "object",
-      "title": "Advanced",
+      "title": "Advanced Settings",
       "description": "Advanced performance settings. Adjust these if you experience timeouts or memory issues.",
+      "options": {
+        "collapsed": true
+      },
       "properties": {
         "batch_size": {
           "type": "integer",
@@ -77,15 +80,7 @@
           "propertyOrder": 3
         }
       },
-      "propertyOrder": 2
-    },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug Mode",
-      "format": "checkbox",
-      "description": "If enabled, the component will produce detailed logs",
-      "default": false,
-      "propertyOrder": 3
+      "propertyOrder": 200
     }
   }
 }

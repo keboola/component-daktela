@@ -162,7 +162,7 @@ class Component(ComponentBase):
             # Process each row configuration
             for idx, row_config in enumerate(self.row_configs):
                 logging.info(
-                    f"Processing row {idx+1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
+                    f"Processing row {idx + 1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
                 )
                 extractor = self._create_extractor(api_client, row_config)
                 await extractor.extract_all()
@@ -191,13 +191,13 @@ class Component(ComponentBase):
                 row_config = RowConfiguration.from_dict(row_data)
                 row_configs.append(row_config)
                 logging.info(
-                    f"Row {idx+1}: endpoint={row_config.endpoint}, "
+                    f"Row {idx + 1}: endpoint={row_config.endpoint}, "
                     f"date_from={row_config.date_from}, date_to={row_config.date_to}, "
                     f"incremental={row_config.destination.incremental}"
                 )
             except Exception as e:
-                logging.error(f"Failed to load row configuration {idx+1}: {e}")
-                raise UserException(f"Invalid row configuration {idx+1}: {e}")
+                logging.error(f"Failed to load row configuration {idx + 1}: {e}")
+                raise UserException(f"Invalid row configuration {idx + 1}: {e}")
 
         return row_configs
 

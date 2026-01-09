@@ -1,6 +1,5 @@
 """Main extractor module for Daktela data extraction."""
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 

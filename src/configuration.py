@@ -1,7 +1,7 @@
 import logging
 
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 DEFAULT_MAX_CONCURRENT_REQUESTS = (
     10  # Default maximum number of concurrent API requests
@@ -20,11 +20,16 @@ class Connection(BaseModel):
     verify_ssl: bool = True
 
 
-class RowDestination(BaseModel):
-    """Row-level destination configuration."""
+class Destination(BaseModel):
+    """Destination configuration for load type and primary key."""
 
-    incremental: bool = False
+    load_type: str = "full_load"  # "full_load" or "incremental_load"
     primary_key: list[str] | None = None
+
+    @property
+    def incremental(self) -> bool:
+        """Convert load_type to boolean for backward compatibility."""
+        return self.load_type == "incremental_load"
 
 
 class RowConfiguration(BaseModel):
@@ -34,7 +39,7 @@ class RowConfiguration(BaseModel):
     date_from: str
     date_to: str
     fields: list[str] | None = None
-    destination: RowDestination = Field(default_factory=RowDestination)
+    destination: Destination = Field(default_factory=Destination)
 
     @classmethod
     def from_dict(cls, data: dict) -> "RowConfiguration":
@@ -62,11 +67,30 @@ class Advanced(BaseModel):
 
 
 class Configuration(BaseModel):
-    """Global configuration (from configSchema.json)."""
+    """
+    Merged configuration combining root config and row config.
 
+    Platform merges root config (from configSchema.json) with row config
+    (from configRowSchema.json) into self.configuration.parameters.
+
+    This class reads from the merged parameters and includes both:
+    - Root config fields: connection, advanced, debug
+    - Row config fields: endpoint, date_from, date_to, fields, destination
+    """
+
+    model_config = ConfigDict(extra="ignore")  # Ignore unknown fields
+
+    # Root config fields (from configSchema.json)
     connection: Connection
     advanced: Advanced = Field(default_factory=Advanced)
     debug: bool = False
+
+    # Row config fields (from configRowSchema.json)
+    endpoint: str
+    date_from: str
+    date_to: str
+    fields: list[str] | None = None
+    destination: Destination = Field(default_factory=Destination)
 
     @model_validator(mode="after")
     def log_debug_mode(self) -> "Configuration":

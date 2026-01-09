@@ -14,7 +14,7 @@ import keboola.utils
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 
-from configuration import Configuration, RowConfiguration
+from configuration import Configuration
 from daktela_client import DaktelaApiClient
 from extractor import DaktelaExtractor
 
@@ -29,24 +29,15 @@ class Component(ComponentBase):
 
     def __init__(self) -> None:
         super().__init__()
-        self.params: Configuration | None = None
-        self.row_config: RowConfiguration | None = None
+        self.config: Configuration | None = None
         self._table_definitions: dict[str, Any] = {}
         self._schema_state: dict[str, Any] = {}
 
     def run(self) -> None:
         """Main execution - orchestrates the component workflow."""
         try:
-            # Load and validate global configuration
-            self.params = self._validate_and_get_configuration()
-
-            # Load and validate row configuration (platform provides exactly one)
-            self.row_config = self._load_row_configuration()
-
-            if not self.row_config:
-                raise UserException(
-                    "No row configuration found. Platform should provide exactly one row configuration."
-                )
+            # Load and validate merged configuration (root + row merged by platform)
+            self.config = self._load_configuration()
 
             # Load schema state from previous runs
             self._load_schema_state()
@@ -103,27 +94,26 @@ class Component(ComponentBase):
         """
         Sync action to list available fields for the current row's endpoint.
 
-        In row config mode, this is called for a specific row.
+        Platform passes merged config (root + row) in configuration.parameters.
         Returns a dictionary with the endpoint name and its available fields.
         """
-        # Load global configuration
-        self.params = self._validate_and_get_configuration()
-
-        # In row config mode, the current row data is in configuration.parameters
-        row_data = self.configuration.parameters
+        # Load merged configuration (root + row fields)
         try:
-            row_config = RowConfiguration.from_dict(row_data)
+            config = Configuration.from_dict(self.configuration.parameters)
         except Exception as e:
-            logging.error(f"Failed to load row configuration for sync action: {e}")
-            return {"error": f"Invalid row configuration: {e}"}
+            logging.error(f"Failed to load configuration for sync action: {e}")
+            return {"error": f"Invalid configuration: {e}"}
 
-        logging.info(f"Running listFields sync action for endpoint: {row_config.endpoint}")
+        # Store for use by API client initialization
+        self.config = config
+
+        logging.info(f"Running listFields sync action for endpoint: {config.endpoint}")
 
         # Run async field discovery for this endpoint
-        result = asyncio.run(self._discover_fields_async(row_config.endpoint))
+        result = asyncio.run(self._discover_fields_async(config.endpoint))
 
-        logging.info(f"Discovered {len(result)} fields for {row_config.endpoint}")
-        return {row_config.endpoint: result}
+        logging.info(f"Discovered {len(result)} fields for {config.endpoint}")
+        return {config.endpoint: result}
 
     async def _discover_fields_async(self, endpoint: str) -> list[str]:
         """Discover available fields for a single endpoint."""
@@ -154,89 +144,68 @@ class Component(ComponentBase):
         return []
 
     async def _run_async_extraction(self) -> None:
-        """Run the async extraction process for the row configuration."""
-        if not self.row_config:
-            raise UserException("No row configuration available for extraction")
+        """Run the async extraction process."""
+        if not self.config:
+            raise UserException("No configuration available for extraction")
 
         # Use async context manager for API client (auth happens in __init__)
         async with self._initialize_api_client() as api_client:
-            logging.info(f"Processing endpoint: {self.row_config.endpoint}")
-            extractor = self._create_extractor(api_client, self.row_config)
+            logging.info(f"Processing endpoint: {self.config.endpoint}")
+            extractor = self._create_extractor(api_client)
             await extractor.extract_all()
 
-    def _validate_and_get_configuration(self) -> Configuration:
-        """Load and validate global configuration parameters."""
-        params = Configuration.from_dict(self.configuration.parameters)
-
-        logging.info(f"Starting Daktela extraction from {params.connection.url}")
-
-        return params
-
-    def _load_row_configuration(self) -> RowConfiguration | None:
+    def _load_configuration(self) -> Configuration:
         """
-        Load and validate row configuration from image_parameters.
+        Load and validate merged configuration.
 
-        Platform always provides exactly one row configuration per job execution.
+        Platform merges root config (from configSchema.json) with row config
+        (from configRowSchema.json) into self.configuration.parameters before
+        running the component.
         """
-        # In row config mode, configuration comes from image_parameters
-        image_params = getattr(self.configuration, "image_parameters", [])
+        config = Configuration.from_dict(self.configuration.parameters)
 
-        if not image_params:
-            logging.warning("No row configuration found in image_parameters")
-            return None
+        logging.info(
+            f"Starting Daktela extraction from {config.connection.url}, "
+            f"endpoint={config.endpoint}, "
+            f"date_from={config.date_from}, date_to={config.date_to}, "
+            f"load_type={config.destination.load_type}"
+        )
 
-        if len(image_params) > 1:
-            raise UserException(
-                f"Expected exactly 1 row configuration, got {len(image_params)}. "
-                "Platform should provide only one row per job execution."
-            )
-
-        try:
-            row_config = RowConfiguration.from_dict(image_params[0])
-            logging.info(
-                f"Loaded row configuration: endpoint={row_config.endpoint}, "
-                f"date_from={row_config.date_from}, date_to={row_config.date_to}, "
-                f"incremental={row_config.destination.incremental}"
-            )
-            return row_config
-        except Exception as e:
-            logging.error(f"Failed to load row configuration: {e}")
-            raise UserException(f"Invalid row configuration: {e}")
+        return config
 
     def _initialize_api_client(self) -> DaktelaApiClient:
         """Initialize and return configured API client (authenticates during init)."""
-        params = self._require_params()
+        config = self._require_config()
         return DaktelaApiClient(
-            url=params.connection.url,
-            username=params.connection.username,
-            password=params.connection.password,
-            max_concurrent=params.advanced.max_concurrent_requests,
-            verify_ssl=params.connection.verify_ssl,
+            url=config.connection.url,
+            username=config.connection.username,
+            password=config.connection.password,
+            max_concurrent=config.advanced.max_concurrent_requests,
+            verify_ssl=config.connection.verify_ssl,
         )
 
     def _create_extractor(
         self,
         api_client: DaktelaApiClient,
-        row_config: RowConfiguration,
     ) -> DaktelaExtractor:
-        """Create and configure the extractor for a single row configuration."""
-        params = self._require_params()
+        """Create and configure the extractor."""
+        config = self._require_config()
 
         # Parse dates using keboola utils
         from_datetime = keboola.utils.get_past_date(
-            row_config.date_from
+            config.date_from
         ).strftime("%Y-%m-%d %H:%M:%S")
         to_datetime = keboola.utils.get_past_date(
-            row_config.date_to
+            config.date_to
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         # Build table config for this endpoint
-        endpoint = row_config.endpoint
+        endpoint = config.endpoint
         table_configs = {}
 
         # Use primary_key from config if set, otherwise use defaults
-        if row_config.destination.primary_key:
-            primary_keys = row_config.destination.primary_key
+        if config.destination.primary_key:
+            primary_keys = config.destination.primary_key
         elif endpoint == "activitiesCall":
             primary_keys = ["id_call"]
         else:
@@ -246,19 +215,19 @@ class Component(ComponentBase):
 
         # Prepare configured fields dict (only for this endpoint)
         configured_fields = {}
-        if row_config.fields:
-            configured_fields[endpoint] = row_config.fields
+        if config.fields:
+            configured_fields[endpoint] = config.fields
 
         return DaktelaExtractor(
             api_client=api_client,
             table_configs=table_configs,
             component=self,
-            url=params.connection.url,
+            url=config.connection.url,
             requested_endpoints=[endpoint],
-            batch_size=params.advanced.batch_size,
+            batch_size=config.advanced.batch_size,
             date_from=from_datetime,
             date_to=to_datetime,
-            incremental=row_config.destination.incremental,
+            incremental=config.destination.incremental,
             configured_fields=configured_fields if configured_fields else None,
         )
 
@@ -345,11 +314,11 @@ class Component(ComponentBase):
             self._table_definitions = {}
         return self._table_definitions
 
-    def _require_params(self) -> Configuration:
+    def _require_config(self) -> Configuration:
         """Return initialized configuration or raise if missing."""
-        if not self.params:
-            raise UserException("Component parameters are not initialized.")
-        return self.params
+        if not self.config:
+            raise UserException("Component configuration is not initialized.")
+        return self.config
 
 
 """

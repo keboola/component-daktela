@@ -6,9 +6,6 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 DEFAULT_MAX_CONCURRENT_REQUESTS = (
     10  # Default maximum number of concurrent API requests
 )
-DEFAULT_MAX_CONCURRENT_ENDPOINTS = (
-    3  # Default maximum number of endpoints to extract concurrently
-)
 DEFAULT_BATCH_SIZE = (
     1000  # Default batch size for processing records before writing to CSV
 )
@@ -54,7 +51,6 @@ class Advanced(BaseModel):
 
     batch_size: int = DEFAULT_BATCH_SIZE
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_REQUESTS
-    max_concurrent_endpoints: int = DEFAULT_MAX_CONCURRENT_ENDPOINTS
 
     @field_validator("batch_size")
     @classmethod

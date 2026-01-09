@@ -30,7 +30,7 @@ class Component(ComponentBase):
     def __init__(self) -> None:
         super().__init__()
         self.params: Configuration | None = None
-        self.row_configs: list[RowConfiguration] = []
+        self.row_config: RowConfiguration | None = None
         self._table_definitions: dict[str, Any] = {}
         self._schema_state: dict[str, Any] = {}
 
@@ -40,15 +40,13 @@ class Component(ComponentBase):
             # Load and validate global configuration
             self.params = self._validate_and_get_configuration()
 
-            # Load and validate row configurations
-            self.row_configs = self._load_row_configurations()
+            # Load and validate row configuration (platform provides exactly one)
+            self.row_config = self._load_row_configuration()
 
-            if not self.row_configs:
+            if not self.row_config:
                 raise UserException(
-                    "No endpoint configurations found. Please add at least one row configuration."
+                    "No row configuration found. Platform should provide exactly one row configuration."
                 )
-
-            logging.info(f"Loaded {len(self.row_configs)} endpoint configurations")
 
             # Load schema state from previous runs
             self._load_schema_state()
@@ -156,16 +154,15 @@ class Component(ComponentBase):
         return []
 
     async def _run_async_extraction(self) -> None:
-        """Run the async extraction process for all row configurations."""
+        """Run the async extraction process for the row configuration."""
+        if not self.row_config:
+            raise UserException("No row configuration available for extraction")
+
         # Use async context manager for API client (auth happens in __init__)
         async with self._initialize_api_client() as api_client:
-            # Process each row configuration
-            for idx, row_config in enumerate(self.row_configs):
-                logging.info(
-                    f"Processing row {idx + 1}/{len(self.row_configs)}: endpoint={row_config.endpoint}"
-                )
-                extractor = self._create_extractor(api_client, row_config)
-                await extractor.extract_all()
+            logging.info(f"Processing endpoint: {self.row_config.endpoint}")
+            extractor = self._create_extractor(api_client, self.row_config)
+            await extractor.extract_all()
 
     def _validate_and_get_configuration(self) -> Configuration:
         """Load and validate global configuration parameters."""
@@ -175,31 +172,36 @@ class Component(ComponentBase):
 
         return params
 
-    def _load_row_configurations(self) -> list[RowConfiguration]:
-        """Load and validate row configurations from image_parameters."""
-        row_configs = []
+    def _load_row_configuration(self) -> RowConfiguration | None:
+        """
+        Load and validate row configuration from image_parameters.
 
-        # In row config mode, configurations come from image_parameters
+        Platform always provides exactly one row configuration per job execution.
+        """
+        # In row config mode, configuration comes from image_parameters
         image_params = getattr(self.configuration, "image_parameters", [])
 
         if not image_params:
-            logging.warning("No row configurations found in image_parameters")
-            return []
+            logging.warning("No row configuration found in image_parameters")
+            return None
 
-        for idx, row_data in enumerate(image_params):
-            try:
-                row_config = RowConfiguration.from_dict(row_data)
-                row_configs.append(row_config)
-                logging.info(
-                    f"Row {idx + 1}: endpoint={row_config.endpoint}, "
-                    f"date_from={row_config.date_from}, date_to={row_config.date_to}, "
-                    f"incremental={row_config.destination.incremental}"
-                )
-            except Exception as e:
-                logging.error(f"Failed to load row configuration {idx + 1}: {e}")
-                raise UserException(f"Invalid row configuration {idx + 1}: {e}")
+        if len(image_params) > 1:
+            raise UserException(
+                f"Expected exactly 1 row configuration, got {len(image_params)}. "
+                "Platform should provide only one row per job execution."
+            )
 
-        return row_configs
+        try:
+            row_config = RowConfiguration.from_dict(image_params[0])
+            logging.info(
+                f"Loaded row configuration: endpoint={row_config.endpoint}, "
+                f"date_from={row_config.date_from}, date_to={row_config.date_to}, "
+                f"incremental={row_config.destination.incremental}"
+            )
+            return row_config
+        except Exception as e:
+            logging.error(f"Failed to load row configuration: {e}")
+            raise UserException(f"Invalid row configuration: {e}")
 
     def _initialize_api_client(self) -> DaktelaApiClient:
         """Initialize and return configured API client (authenticates during init)."""
@@ -257,7 +259,6 @@ class Component(ComponentBase):
             date_from=from_datetime,
             date_to=to_datetime,
             incremental=row_config.destination.incremental,
-            max_concurrent_endpoints=params.advanced.max_concurrent_endpoints,
             configured_fields=configured_fields if configured_fields else None,
         )
 

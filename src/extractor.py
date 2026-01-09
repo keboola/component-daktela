@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from keboola.component.exceptions import UserException
 
-from configuration import DEFAULT_BATCH_SIZE, DEFAULT_MAX_CONCURRENT_ENDPOINTS
+from configuration import DEFAULT_BATCH_SIZE
 from daktela_client import DaktelaApiClient
 from transformer import DataTransformer
 
@@ -28,7 +28,6 @@ class DaktelaExtractor:
         date_from: str | None = None,
         date_to: str | None = None,
         incremental: bool = False,
-        max_concurrent_endpoints: int = DEFAULT_MAX_CONCURRENT_ENDPOINTS,
         configured_fields: dict[str, list[str]] | None = None,
     ):
         """
@@ -39,12 +38,11 @@ class DaktelaExtractor:
             table_configs: Dictionary of table configurations
             component: Component instance for writing tables
             url: Base URL (e.g., https://customer.daktela.com)
-            requested_endpoints: List of endpoint names to extract
+            requested_endpoints: List of endpoint names to extract (typically one per job)
             batch_size: Number of records to process in each batch (default: 1000)
             date_from: Start date for filtering (for supported endpoints)
             date_to: End date for filtering (for supported endpoints)
             incremental: Whether to use incremental mode
-            max_concurrent_endpoints: Maximum number of endpoints to extract concurrently
             configured_fields: User-configured fields per endpoint (optional)
         """
         self.api_client = api_client
@@ -56,7 +54,6 @@ class DaktelaExtractor:
         self.date_from = date_from
         self.date_to = date_to
         self.incremental = incremental
-        self.max_concurrent_endpoints = max_concurrent_endpoints
         self.configured_fields = configured_fields or {}
         self._table_columns: dict[str, list[str]] = {}
 
@@ -64,73 +61,21 @@ class DaktelaExtractor:
         """
         Extract all requested endpoints asynchronously.
 
-        Uses two-phase extraction like the old component:
-        Phase 1: Extract all tables except activities and activities_statuses
-        Phase 2: Extract activities and activities_statuses
-
-        This is done because activities may depend on data from other tables
-        for filtering invalid activities.
+        Note: In row-based configuration mode, typically only one endpoint
+        is requested per job execution (platform executes one row per job).
         """
         logging.info(
-            f"Starting extraction for {len(self.requested_endpoints)} endpoints"
+            f"Starting extraction for {len(self.requested_endpoints)} endpoint(s)"
         )
 
         if not self.requested_endpoints:
             raise UserException("No endpoints specified for extraction")
 
-        # Define activities-related endpoints that need special treatment
-        # These are extracted in phase 2 after all other tables
-        activities_endpoints = {
-            "activities",
-            "activities_statuses",
-            "activitiesCall",
-            "activitiesChat",
-            "activitiesEmail",
-        }
-
-        # Phase 1: Extract all tables except activities-related ones
-        phase1_endpoints = [
-            ep for ep in self.requested_endpoints if ep not in activities_endpoints
-        ]
-        if phase1_endpoints:
-            logging.info(
-                f"Phase 1: Extracting {len(phase1_endpoints)} endpoints "
-                f"(max {self.max_concurrent_endpoints} concurrent)"
-            )
-            await self._run_endpoints_with_limit(phase1_endpoints)
-            logging.info("Phase 1 extraction completed")
-
-        # Phase 2: Extract activities-related tables
-        phase2_endpoints = [
-            ep for ep in self.requested_endpoints if ep in activities_endpoints
-        ]
-        if phase2_endpoints:
-            logging.info(
-                f"Phase 2: Extracting {len(phase2_endpoints)} activities-related endpoints "
-                f"(max {self.max_concurrent_endpoints} concurrent)"
-            )
-            await self._run_endpoints_with_limit(phase2_endpoints)
-            logging.info("Phase 2 extraction completed")
+        # Extract each endpoint (typically just one per job)
+        for endpoint in self.requested_endpoints:
+            await self._extract_table(endpoint)
 
         logging.info("Extraction completed successfully")
-
-    async def _run_endpoints_with_limit(self, endpoints: list[str]) -> None:
-        """
-        Run endpoint extractions with bounded concurrency.
-
-        This limits the number of endpoints being extracted simultaneously
-        to prevent OOM when multiple large tables are extracted at once.
-
-        Args:
-            endpoints: List of endpoint names to extract
-        """
-        sem = asyncio.Semaphore(self.max_concurrent_endpoints)
-
-        async def run_one(endpoint: str) -> None:
-            async with sem:
-                await self._extract_table(endpoint)
-
-        await asyncio.gather(*(run_one(ep) for ep in endpoints))
 
     def _get_table_endpoint(self, table_name: str, table_config: dict[str, Any]) -> str:
         """Return endpoint override for table if configured."""

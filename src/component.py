@@ -164,6 +164,9 @@ class Component(ComponentBase):
         """
         config = Configuration.from_dict(self.configuration.parameters)
 
+        # Validate that required fields for extraction are present
+        config.validate_for_extraction()
+
         logging.info(
             f"Starting Daktela extraction from {config.connection.url}, "
             f"endpoint={config.endpoint}, "

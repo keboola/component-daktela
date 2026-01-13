@@ -86,9 +86,10 @@ class Configuration(BaseModel):
     debug: bool = False
 
     # Row config fields (from configRowSchema.json)
-    endpoint: str
-    date_from: str
-    date_to: str
+    # Optional with defaults for testing and partial configs
+    endpoint: str | None = None
+    date_from: str = "7 days ago"
+    date_to: str = "today"
     fields: list[str] | None = None
     destination: Destination = Field(default_factory=Destination)
 
@@ -98,6 +99,15 @@ class Configuration(BaseModel):
         if self.debug:
             logging.debug("Component will run in Debug mode")
         return self
+
+    def validate_for_extraction(self) -> None:
+        """
+        Validate that required fields for extraction are present.
+
+        Call this before running extraction to ensure endpoint is set.
+        """
+        if not self.endpoint:
+            raise ValueError("endpoint is required for extraction")
 
     @classmethod
     def from_dict(cls, data: dict) -> "Configuration":

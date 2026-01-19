@@ -48,9 +48,6 @@
       "type": "object",
       "title": "Advanced Settings",
       "description": "Advanced performance settings. Adjust these if you experience timeouts or memory issues.",
-      "options": {
-        "collapsed": true
-      },
       "properties": {
         "batch_size": {
           "type": "integer",

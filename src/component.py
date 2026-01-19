@@ -89,6 +89,60 @@ class Component(ComponentBase):
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
+    @sync_action("testConnection")
+    def test_connection(self) -> dict[str, str]:
+        """
+        Sync action to test connection to Daktela API.
+
+        Validates credentials by attempting to authenticate with the API.
+        Returns success/error status with a message.
+        """
+        try:
+            # Get connection parameters
+            params = self.configuration.parameters
+            connection = params.get("connection", {})
+            url = connection.get("url")
+            username = connection.get("username")
+            password = connection.get("#password")
+            verify_ssl = connection.get("verify_ssl", True)
+
+            if not url:
+                raise UserException("URL is required")
+            if not username:
+                raise UserException("Username is required")
+            if not password:
+                raise UserException("Password is required")
+
+            logging.info(f"Testing connection to {url}")
+
+            # Test connection by attempting to authenticate
+            result = asyncio.run(
+                self._test_connection_async(url, username, password, verify_ssl)
+            )
+
+            return result
+
+        except UserException as e:
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            logging.exception("Connection test failed")
+            return {"status": "error", "message": f"Connection failed: {e}"}
+
+    async def _test_connection_async(
+        self, url: str, username: str, password: str, verify_ssl: bool
+    ) -> dict[str, str]:
+        """Test connection to Daktela API asynchronously."""
+        api_client = DaktelaApiClient(
+            url=url,
+            username=username,
+            password=password,
+            max_concurrent=1,
+            verify_ssl=verify_ssl,
+        )
+        async with api_client:
+            # If we get here, authentication was successful
+            return {"status": "success", "message": "Connection successful"}
+
     @sync_action("listFields")
     def list_fields(self) -> dict[str, Any]:
         """

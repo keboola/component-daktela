@@ -53,27 +53,14 @@
           }
         }
       },
-      "propertyOrder": 1
-    },
-    "destination": {
-      "type": "object",
-      "title": "Destination",
-      "properties": {
-        "incremental": {
-          "type": "boolean",
-          "title": "Incremental Load",
-          "format": "checkbox",
-          "description": "If enabled, new data will be appended to existing tables. If disabled, existing tables will be replaced.",
-          "default": false,
-          "propertyOrder": 1
-        }
-      },
-      "propertyOrder": 2
+      "propertyOrder": 100
     },
     "advanced": {
       "type": "object",
-      "title": "Advanced",
+      "title": "Advanced Settings",
       "description": "Advanced performance settings. Adjust these if you experience timeouts or memory issues.",
+      "format": "grid",
+      "propertyOrder": 200,
       "properties": {
         "batch_size": {
           "type": "integer",
@@ -87,31 +74,13 @@
         "max_concurrent_requests": {
           "type": "integer",
           "title": "Max Concurrent Requests",
-          "description": "Maximum number of concurrent API requests. Controls how many HTTP calls can run in parallel across all endpoints. Increase for faster extraction, decrease if experiencing rate limiting.",
+          "description": "Maximum number of concurrent API requests. Controls how many HTTP calls can run in parallel. Increase for faster extraction, decrease if experiencing rate limiting.",
           "default": 10,
           "minimum": 1,
           "maximum": 50,
           "propertyOrder": 2
-        },
-        "max_concurrent_endpoints": {
-          "type": "integer",
-          "title": "Max Concurrent Endpoints",
-          "description": "Maximum number of endpoints (rows) to extract simultaneously. Each endpoint holds data in memory, so lower values reduce memory usage. Increase for faster extraction on large backends with more memory.",
-          "default": 3,
-          "minimum": 1,
-          "maximum": 20,
-          "propertyOrder": 3
         }
-      },
-      "propertyOrder": 3
-    },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug Mode",
-      "format": "checkbox",
-      "description": "If enabled, the component will produce detailed logs",
-      "default": false,
-      "propertyOrder": 4
+      }
     }
   }
 }

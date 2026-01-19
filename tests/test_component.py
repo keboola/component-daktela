@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from keboola.component.exceptions import UserException  # noqa: E402
-from configuration import Configuration, RowConfiguration  # noqa: E402
+from configuration import Configuration  # noqa: E402
 
 
 class TestConfiguration(unittest.TestCase):
@@ -59,77 +59,89 @@ class TestConfiguration(unittest.TestCase):
             }
         )
 
-        self.assertEqual(config.destination.incremental, False)
         self.assertEqual(config.advanced.batch_size, 1000)
         self.assertEqual(config.advanced.max_concurrent_requests, 10)
-        self.assertEqual(config.advanced.max_concurrent_endpoints, 3)
         self.assertEqual(config.debug, False)
 
 
-class TestRowConfiguration(unittest.TestCase):
-    """Test row configuration validation."""
+class TestMergedConfiguration(unittest.TestCase):
+    """Test merged configuration (root + row fields)."""
 
-    def test_valid_row_configuration(self):
-        """Test valid row configuration."""
-        row_config = RowConfiguration(
+    def test_merged_configuration(self):
+        """Test merged configuration with both root and row fields."""
+        config = Configuration(
+            connection={
+                "url": "https://demo.daktela.com",
+                "username": "test",
+                "#password": "test"
+            },
             endpoint="contacts",
             date_from="7 days ago",
             date_to="today"
         )
 
-        self.assertEqual(row_config.endpoint, "contacts")
-        self.assertEqual(row_config.date_from, "7 days ago")
-        self.assertEqual(row_config.date_to, "today")
-        self.assertIsNone(row_config.fields)
+        # Root config fields
+        self.assertEqual(config.connection.url, "https://demo.daktela.com")
+        self.assertEqual(config.connection.username, "test")
 
-    def test_row_configuration_with_fields(self):
-        """Test row configuration with fields specified."""
-        row_config = RowConfiguration(
+        # Row config fields
+        self.assertEqual(config.endpoint, "contacts")
+        self.assertEqual(config.date_from, "7 days ago")
+        self.assertEqual(config.date_to, "today")
+        self.assertIsNone(config.fields)
+        self.assertEqual(config.destination.incremental, False)
+        self.assertIsNone(config.destination.primary_key)
+
+    def test_merged_configuration_with_fields(self):
+        """Test merged configuration with fields specified."""
+        config = Configuration(
+            connection={
+                "url": "https://demo.daktela.com",
+                "username": "test",
+                "#password": "test"
+            },
             endpoint="contacts",
             date_from="7 days ago",
             date_to="today",
             fields=["name", "email", "phone"]
         )
 
-        self.assertEqual(row_config.endpoint, "contacts")
-        self.assertIsNotNone(row_config.fields)
-        self.assertEqual(len(row_config.fields), 3)
-        self.assertIn("name", row_config.fields)
+        self.assertEqual(config.endpoint, "contacts")
+        self.assertIsNotNone(config.fields)
+        self.assertEqual(len(config.fields), 3)
+        self.assertIn("name", config.fields)
 
-    def test_missing_required_field(self):
-        """Test validation fails when required field is missing."""
-        with self.assertRaises(UserException):
-            RowConfiguration.from_dict({
-                "date_from": "7 days ago",
-                "date_to": "today"
-                # Missing required 'endpoint' field
-            })
-
-    def test_multiple_row_configs(self):
-        """Test creating multiple row configurations."""
-        row1 = RowConfiguration(
-            endpoint="contacts",
-            date_from="7 days ago",
-            date_to="today"
-        )
-        row2 = RowConfiguration(
-            endpoint="activities",
-            date_from="3 days ago",
-            date_to="today",
-            fields=["time", "user", "title"]
-        )
-        row3 = RowConfiguration(
-            endpoint="tickets",
-            date_from="7 days ago",
-            date_to="today"
+    def test_validate_for_extraction(self):
+        """Test validation for extraction requires endpoint."""
+        # Config without endpoint should fail validation
+        config = Configuration(
+            connection={
+                "url": "https://demo.daktela.com",
+                "username": "test",
+                "#password": "test"
+            }
         )
 
-        rows = [row1, row2, row3]
-        self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[0].endpoint, "contacts")
-        self.assertEqual(rows[1].endpoint, "activities")
-        self.assertIsNotNone(rows[1].fields)
-        self.assertEqual(rows[2].endpoint, "tickets")
+        with self.assertRaises(ValueError) as context:
+            config.validate_for_extraction()
+
+        self.assertIn("endpoint is required", str(context.exception))
+
+    def test_row_fields_defaults(self):
+        """Test row fields have proper defaults."""
+        config = Configuration(
+            connection={
+                "url": "https://demo.daktela.com",
+                "username": "test",
+                "#password": "test"
+            }
+        )
+
+        # Row fields should have defaults
+        self.assertIsNone(config.endpoint)
+        self.assertEqual(config.date_from, "7 days ago")
+        self.assertEqual(config.date_to, "today")
+        self.assertIsNone(config.fields)
 
 
 if __name__ == "__main__":

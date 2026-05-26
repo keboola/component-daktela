@@ -84,10 +84,10 @@ class DaktelaExtractor:
         """
         Determine which fields to extract for an endpoint.
 
-        Precedence:
-        1. User-configured fields (from configuration)
-        2. Schema from state (from previous runs)
-        3. None (fetch all fields from API)
+        Only user-configured fields are sent to the API. Schema state columns
+        are NOT used because they contain post-transformation names (e.g.
+        ``category_name`` instead of ``category``) that the API does not
+        recognise.
 
         Args:
             table_name: Name of the endpoint/table
@@ -95,7 +95,6 @@ class DaktelaExtractor:
         Returns:
             List of field names or None to fetch all fields
         """
-        # 1. User-configured fields take highest priority
         if table_name in self.configured_fields:
             fields = self.configured_fields[table_name]
             if fields:
@@ -104,17 +103,8 @@ class DaktelaExtractor:
                 )
                 return fields
 
-        # 2. Schema from state (previous runs)
-        state_fields = self.component.get_schema_for_endpoint(table_name)
-        if state_fields:
-            logging.info(
-                f"Using schema state fields for {table_name}: {len(state_fields)} fields"
-            )
-            return state_fields
-
-        # 3. No fields specified - will fetch all from API
         logging.info(
-            f"No field configuration for {table_name}, will fetch all fields from API"
+            f"No user-configured fields for {table_name}, will fetch all fields from API"
         )
         return None
 
@@ -182,21 +172,32 @@ class DaktelaExtractor:
         else:
             logging.warning(f"No data found for table: {table_name}")
 
-    def _get_columns(self, sample_record: dict[str, Any]) -> list[str]:
+    def _get_columns_from_batch(self, records: list[dict[str, Any]]) -> list[str]:
         """
-        Get ordered list of columns for output.
+        Build the column list from ALL records in a batch.
+
+        Scanning every record is necessary because relation fields (e.g.
+        ``user``, ``contact``) may be ``null`` in some records and nested
+        dicts in others.  After flattening, a null produces a scalar
+        column ``user`` while a dict produces ``user_name``,
+        ``user_title``, etc.  If only the first record is inspected and
+        it happens to have a null, the flattened columns from later
+        records are silently dropped.
 
         Args:
-            sample_record: Sample record to extract columns from
+            records: All transformed records in the current batch
 
         Returns:
-            Ordered list of column names
+            Ordered list of column names (union of all records)
         """
-        # Start with id
-        columns = ["id"]
+        seen: dict[str, None] = {}
+        for record in records:
+            for key in record:
+                if key not in seen:
+                    seen[key] = None
 
-        # Add all other columns from sample record
-        for key in sample_record.keys():
+        columns = ["id"]
+        for key in seen:
             if key not in columns:
                 columns.append(key)
 
@@ -214,11 +215,22 @@ class DaktelaExtractor:
             return 0
 
         if output_table_name not in self._table_columns:
-            self._table_columns[output_table_name] = self._get_columns(records[0])
+            self._table_columns[output_table_name] = self._get_columns_from_batch(
+                records
+            )
             # Update schema state with discovered columns
             self.component.update_schema_for_endpoint(
                 table_name, self._table_columns[output_table_name]
             )
+        else:
+            existing = set(self._table_columns[output_table_name])
+            new_columns = {k for r in records for k in r if k not in existing}
+            if new_columns:
+                logging.warning(
+                    f"Found {len(new_columns)} new column(s) in a later batch "
+                    f"for {output_table_name} that were not present in the "
+                    f"first batch: {sorted(new_columns)}"
+                )
 
         self.component.write_table_data(
             table_name=output_table_name,

@@ -374,6 +374,8 @@ class Component(ComponentBase):
             writer.writeheader()
             for row in existing_rows:
                 writer.writerow({col: row.get(col, "") for col in columns})
+        # Update the table definition so the manifest reflects all columns
+        out_table.columns = columns
         logging.info(
             f"Rewrote {table_name} with {len(columns)} columns "
             f"({len(existing_rows)} existing rows)"

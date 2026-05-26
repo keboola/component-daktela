@@ -249,12 +249,12 @@ class Component(ComponentBase):
         config = self._require_config()
 
         # Parse dates using keboola utils
-        from_datetime = keboola.utils.get_past_date(
-            config.date_from
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        to_datetime = keboola.utils.get_past_date(
-            config.date_to
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        from_datetime = keboola.utils.get_past_date(config.date_from).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        to_datetime = keboola.utils.get_past_date(config.date_to).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
         # Build table config for this endpoint
         endpoint = config.endpoint
@@ -347,6 +347,37 @@ class Component(ComponentBase):
                     writer.writerow(row)
 
             logging.info(f"Wrote {len(records)} records to {table_name}")
+
+    def rewrite_table_columns(
+        self,
+        table_name: str,
+        columns: list[str],
+    ) -> None:
+        """Rewrite an existing CSV file with an extended column list.
+
+        Reads all rows written so far, then rewrites the file with the new
+        header.  Existing rows receive empty strings for the newly added
+        columns.
+
+        Args:
+            table_name: Name of the output table (e.g., "tickets.csv")
+            columns: The full (extended) column list
+        """
+        out_table = self._get_table_definitions().get(table_name)
+        if not out_table:
+            return
+        with open(out_table.full_path, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing_rows = list(reader)
+        with open(out_table.full_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            for row in existing_rows:
+                writer.writerow({col: row.get(col, "") for col in columns})
+        logging.info(
+            f"Rewrote {table_name} with {len(columns)} columns "
+            f"({len(existing_rows)} existing rows)"
+        )
 
     def finalize_table(self, table_name: str) -> None:
         """

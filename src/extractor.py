@@ -224,12 +224,19 @@ class DaktelaExtractor:
             )
         else:
             existing = set(self._table_columns[output_table_name])
-            new_columns = {k for r in records for k in r if k not in existing}
+            new_columns = [k for r in records for k in r if k not in existing]
             if new_columns:
-                logging.warning(
-                    f"Found {len(new_columns)} new column(s) in a later batch "
-                    f"for {output_table_name} that were not present in the "
-                    f"first batch: {sorted(new_columns)}"
+                unique_new = list(dict.fromkeys(new_columns))
+                self._table_columns[output_table_name].extend(unique_new)
+                self.component.update_schema_for_endpoint(
+                    table_name, self._table_columns[output_table_name]
+                )
+                self.component.rewrite_table_columns(
+                    output_table_name, self._table_columns[output_table_name]
+                )
+                logging.info(
+                    f"Extended column list for {output_table_name} with "
+                    f"{len(unique_new)} new column(s): {sorted(unique_new)}"
                 )
 
         self.component.write_table_data(

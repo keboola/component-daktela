@@ -270,5 +270,70 @@ class TestTransformerFlattenMixedFields(unittest.TestCase):
         self.assertNotIn("user", result[0])
 
 
+class TestCrossBatchColumnExtension(unittest.TestCase):
+    """Test column extension when a later batch introduces new columns."""
+
+    def _make_extractor(self):
+        return DaktelaExtractor(
+            api_client=MagicMock(),
+            table_configs={"tickets": {"primary_keys": ["name"]}},
+            component=MagicMock(),
+            url="https://test.daktela.com",
+            requested_endpoints=["tickets"],
+        )
+
+    def test_first_batch_sets_columns_without_rewrite(self):
+        """The first batch defines the columns and never triggers a rewrite."""
+        extractor = self._make_extractor()
+        extractor._write_records(
+            "tickets.csv",
+            {"primary_keys": ["name"]},
+            [{"id": "1", "name": "t1"}],
+        )
+        self.assertEqual(extractor._table_columns["tickets.csv"], ["id", "name"])
+        extractor.component.rewrite_table_columns.assert_not_called()
+
+    def test_new_column_in_later_batch_triggers_rewrite(self):
+        """A column appearing only in a later batch extends the list and rewrites."""
+        extractor = self._make_extractor()
+        extractor._table_columns["tickets.csv"] = ["id", "name"]
+        extractor._write_records(
+            "tickets.csv",
+            {"primary_keys": ["name"]},
+            [{"id": "2", "name": "t2", "user_name": "john"}],
+        )
+        self.assertEqual(
+            extractor._table_columns["tickets.csv"], ["id", "name", "user_name"]
+        )
+        extractor.component.rewrite_table_columns.assert_called_once_with(
+            "tickets.csv", ["id", "name", "user_name"]
+        )
+
+    def test_no_new_columns_does_not_rewrite(self):
+        """A later batch with known columns must not trigger a rewrite."""
+        extractor = self._make_extractor()
+        extractor._table_columns["tickets.csv"] = ["id", "name"]
+        extractor._write_records(
+            "tickets.csv",
+            {"primary_keys": ["name"]},
+            [{"id": "2", "name": "t2"}],
+        )
+        extractor.component.rewrite_table_columns.assert_not_called()
+
+    def test_columns_not_committed_when_rewrite_fails(self):
+        """If the rewrite fails, the in-memory column list stays in sync with disk."""
+        extractor = self._make_extractor()
+        extractor._table_columns["tickets.csv"] = ["id", "name"]
+        extractor.component.rewrite_table_columns.side_effect = OSError("disk full")
+        with self.assertRaises(OSError):
+            extractor._write_records(
+                "tickets.csv",
+                {"primary_keys": ["name"]},
+                [{"id": "2", "name": "t2", "user_name": "john"}],
+            )
+        # Column list must remain unchanged so it matches the on-disk header.
+        self.assertEqual(extractor._table_columns["tickets.csv"], ["id", "name"])
+
+
 if __name__ == "__main__":
     unittest.main()

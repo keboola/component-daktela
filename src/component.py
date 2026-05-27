@@ -5,9 +5,9 @@ Daktela Extractor Component main class.
 import asyncio
 import csv
 import logging
+import os
 import sys
 import traceback
-from datetime import datetime, timezone
 from typing import Any
 
 import keboola.utils
@@ -31,7 +31,6 @@ class Component(ComponentBase):
         super().__init__()
         self.config: Configuration | None = None
         self._table_definitions: dict[str, Any] = {}
-        self._schema_state: dict[str, Any] = {}
 
     def run(self) -> None:
         """Main execution - orchestrates the component workflow."""
@@ -39,14 +38,8 @@ class Component(ComponentBase):
             # Load and validate merged configuration (root + row merged by platform)
             self.config = self._load_configuration()
 
-            # Load schema state from previous runs
-            self._load_schema_state()
-
             # Run async extraction
             asyncio.run(self._run_async_extraction())
-
-            # Save updated schema state
-            self._save_schema_state()
 
             logging.info("Daktela extraction completed successfully")
 
@@ -59,35 +52,6 @@ class Component(ComponentBase):
             logging.exception("Unhandled error in component execution")
             traceback.print_exc(file=sys.stderr)
             sys.exit(2)
-
-    def _load_schema_state(self) -> None:
-        """Load schema state from previous runs."""
-        state = self.get_state_file()
-        self._schema_state = state.get("schema", {})
-        if self._schema_state:
-            logging.info(f"Loaded schema state for {len(self._schema_state)} endpoints")
-
-    def _save_schema_state(self) -> None:
-        """Save schema state for future runs."""
-        state = self.get_state_file()
-        state["schema"] = self._schema_state
-        state["last_updated"] = datetime.now(timezone.utc).isoformat()
-        self.write_state_file(state)
-        logging.info(f"Saved schema state for {len(self._schema_state)} endpoints")
-
-    def get_schema_for_endpoint(self, endpoint: str) -> list[str] | None:
-        """Get stored schema (columns) for an endpoint."""
-        endpoint_schema = self._schema_state.get(endpoint)
-        if endpoint_schema:
-            return endpoint_schema.get("columns")
-        return None
-
-    def update_schema_for_endpoint(self, endpoint: str, columns: list[str]) -> None:
-        """Update stored schema for an endpoint."""
-        self._schema_state[endpoint] = {
-            "columns": columns,
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-        }
 
     @sync_action("testConnection")
     def test_connection(self) -> dict[str, str]:
@@ -355,9 +319,12 @@ class Component(ComponentBase):
     ) -> None:
         """Rewrite an existing CSV file with an extended column list.
 
-        Reads all rows written so far, then rewrites the file with the new
-        header.  Existing rows receive empty strings for the newly added
-        columns.
+        Streams the already-written rows through a temporary file and then
+        atomically replaces the original via ``os.replace``.  This keeps memory
+        usage proportional to a single row (rather than the whole table) and
+        guarantees the original file survives any mid-write failure -- a partial
+        temp file is simply discarded and the original is left untouched.
+        Existing rows receive empty strings for the newly added columns.
 
         Args:
             table_name: Name of the output table (e.g., "tickets.csv")
@@ -365,21 +332,23 @@ class Component(ComponentBase):
         """
         out_table = self._get_table_definitions().get(table_name)
         if not out_table:
-            return
-        with open(out_table.full_path, "r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            existing_rows = list(reader)
-        with open(out_table.full_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=columns)
+            raise UserException(
+                f"Cannot rewrite columns: no table definition for {table_name}."
+            )
+
+        tmp_path = f"{out_table.full_path}.tmp"
+        with open(out_table.full_path, "r", newline="", encoding="utf-8") as src, \
+                open(tmp_path, "w", newline="", encoding="utf-8") as dst:
+            reader = csv.DictReader(src)
+            writer = csv.DictWriter(dst, fieldnames=columns)
             writer.writeheader()
-            for row in existing_rows:
+            for row in reader:
                 writer.writerow({col: row.get(col, "") for col in columns})
+
+        os.replace(tmp_path, out_table.full_path)
         # Update the table definition so the manifest reflects all columns
         out_table.columns = columns
-        logging.info(
-            f"Rewrote {table_name} with {len(columns)} columns "
-            f"({len(existing_rows)} existing rows)"
-        )
+        logging.info(f"Rewrote {table_name} with {len(columns)} columns")
 
     def finalize_table(self, table_name: str) -> None:
         """

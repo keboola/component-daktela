@@ -153,14 +153,14 @@ class DaktelaExtractor:
                 # Write in configurable batches to reduce memory footprint
                 if len(write_batch) >= write_batch_size:
                     total_records += self._write_records(
-                        output_table_name, table_config, write_batch, table_name
+                        output_table_name, table_config, write_batch
                     )
                     write_batch = []
 
             # Write remaining records from this page
             if write_batch:
                 total_records += self._write_records(
-                    output_table_name, table_config, write_batch, table_name
+                    output_table_name, table_config, write_batch
                 )
 
         # Finalize table (write manifest)
@@ -208,7 +208,6 @@ class DaktelaExtractor:
         output_table_name: str,
         table_config: dict[str, Any],
         records: list[dict[str, Any]],
-        table_name: str,
     ) -> int:
         """Write a batch of records via the component and return written count."""
         if not records:
@@ -218,26 +217,23 @@ class DaktelaExtractor:
             self._table_columns[output_table_name] = self._get_columns_from_batch(
                 records
             )
-            # Update schema state with discovered columns
-            self.component.update_schema_for_endpoint(
-                table_name, self._table_columns[output_table_name]
-            )
         else:
             existing = set(self._table_columns[output_table_name])
-            new_columns = [k for r in records for k in r if k not in existing]
+            new_columns = list(
+                dict.fromkeys(k for r in records for k in r if k not in existing)
+            )
             if new_columns:
-                unique_new = list(dict.fromkeys(new_columns))
-                self._table_columns[output_table_name].extend(unique_new)
-                self.component.update_schema_for_endpoint(
-                    table_name, self._table_columns[output_table_name]
-                )
-                self.component.rewrite_table_columns(
-                    output_table_name, self._table_columns[output_table_name]
-                )
+                extended = self._table_columns[output_table_name] + new_columns
+                # Rewrite the CSV first; only commit the in-memory column list
+                # once the (atomic) rewrite has succeeded, so an I/O failure
+                # cannot leave the header and the tracked columns out of sync.
+                self.component.rewrite_table_columns(output_table_name, extended)
+                self._table_columns[output_table_name] = extended
                 logging.info(
                     f"Extended column list for {output_table_name} with "
-                    f"{len(unique_new)} new column(s): {sorted(unique_new)}"
+                    f"{len(new_columns)} new column(s)"
                 )
+                logging.debug(f"New columns for {output_table_name}: {new_columns}")
 
         self.component.write_table_data(
             table_name=output_table_name,

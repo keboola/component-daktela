@@ -5,6 +5,7 @@ Daktela Extractor Component main class.
 import asyncio
 import csv
 import logging
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -31,7 +32,6 @@ class Component(ComponentBase):
         super().__init__()
         self.config: Configuration | None = None
         self._table_definitions: dict[str, Any] = {}
-        self._schema_state: dict[str, Any] = {}
 
     def run(self) -> None:
         """Main execution - orchestrates the component workflow."""
@@ -39,14 +39,8 @@ class Component(ComponentBase):
             # Load and validate merged configuration (root + row merged by platform)
             self.config = self._load_configuration()
 
-            # Load schema state from previous runs
-            self._load_schema_state()
-
             # Run async extraction
             asyncio.run(self._run_async_extraction())
-
-            # Save updated schema state
-            self._save_schema_state()
 
             logging.info("Daktela extraction completed successfully")
 
@@ -60,34 +54,49 @@ class Component(ComponentBase):
             traceback.print_exc(file=sys.stderr)
             sys.exit(2)
 
-    def _load_schema_state(self) -> None:
-        """Load schema state from previous runs."""
-        state = self.get_state_file()
-        self._schema_state = state.get("schema", {})
-        if self._schema_state:
-            logging.info(f"Loaded schema state for {len(self._schema_state)} endpoints")
+    def get_output_columns(self, table_name: str) -> list[str]:
+        """Return the persisted output-CSV column list for ``table_name`` (or []).
 
-    def _save_schema_state(self) -> None:
-        """Save schema state for future runs."""
+        Used by the extractor to seed the column list on the first batch of a run,
+        so columns discovered in previous runs are kept in the output header even
+        when the current batch happens not to contain them.  This is what stops
+        Storage rejecting the import with "missing columns" after schema drift.
+
+        The state key is deliberately named ``output_columns`` and the methods are
+        named ``output_columns`` (not ``schema``) so this CSV-side state cannot be
+        misused as the API ``fields`` parameter -- the two namespaces are
+        post-transformation (e.g. ``user_name``) vs raw API (``user``), and
+        conflating them was the original "empty nested columns" bug.
+        """
         state = self.get_state_file()
-        state["schema"] = self._schema_state
+        current = state.get("output_columns", {}).get(table_name)
+        if current:
+            return list(current)
+        # Migration: an earlier build of this component persisted discovered
+        # columns under ``state["schema"][endpoint]["columns"]``, keyed by the
+        # bare endpoint name (no ``.csv``).  Honor that on the first run after
+        # upgrade so columns from a prior successful job aren't lost.
+        legacy = (
+            state.get("schema", {})
+            .get(table_name.removesuffix(".csv"), {})
+            .get("columns", [])
+        )
+        return list(legacy)
+
+    def save_output_columns(self, columns_by_table: dict[str, list[str]]) -> None:
+        """Persist the per-table output-CSV column list for the next run."""
+        state = self.get_state_file()
+        # Merge into existing state rather than replacing — each job processes
+        # one endpoint at a time, so other endpoints' column history must not
+        # be discarded by a run that did not touch them.
+        existing = state.get("output_columns", {})
+        existing.update({k: list(v) for k, v in columns_by_table.items()})
+        state["output_columns"] = existing
         state["last_updated"] = datetime.now(timezone.utc).isoformat()
         self.write_state_file(state)
-        logging.info(f"Saved schema state for {len(self._schema_state)} endpoints")
-
-    def get_schema_for_endpoint(self, endpoint: str) -> list[str] | None:
-        """Get stored schema (columns) for an endpoint."""
-        endpoint_schema = self._schema_state.get(endpoint)
-        if endpoint_schema:
-            return endpoint_schema.get("columns")
-        return None
-
-    def update_schema_for_endpoint(self, endpoint: str, columns: list[str]) -> None:
-        """Update stored schema for an endpoint."""
-        self._schema_state[endpoint] = {
-            "columns": columns,
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-        }
+        logging.info(
+            f"Saved output column state for {len(columns_by_table)} table(s)"
+        )
 
     @sync_action("testConnection")
     def test_connection(self) -> dict[str, str]:
@@ -249,12 +258,12 @@ class Component(ComponentBase):
         config = self._require_config()
 
         # Parse dates using keboola utils
-        from_datetime = keboola.utils.get_past_date(
-            config.date_from
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        to_datetime = keboola.utils.get_past_date(
-            config.date_to
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        from_datetime = keboola.utils.get_past_date(config.date_from).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        to_datetime = keboola.utils.get_past_date(config.date_to).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
         # Build table config for this endpoint
         endpoint = config.endpoint
@@ -347,6 +356,44 @@ class Component(ComponentBase):
                     writer.writerow(row)
 
             logging.info(f"Wrote {len(records)} records to {table_name}")
+
+    def rewrite_table_columns(
+        self,
+        table_name: str,
+        columns: list[str],
+    ) -> None:
+        """Rewrite an existing CSV file with an extended column list.
+
+        Streams the already-written rows through a temporary file and then
+        atomically replaces the original via ``os.replace``.  This keeps memory
+        usage proportional to a single row (rather than the whole table) and
+        guarantees the original file survives any mid-write failure -- a partial
+        temp file is simply discarded and the original is left untouched.
+        Existing rows receive empty strings for the newly added columns.
+
+        Args:
+            table_name: Name of the output table (e.g., "tickets.csv")
+            columns: The full (extended) column list
+        """
+        out_table = self._get_table_definitions().get(table_name)
+        if not out_table:
+            raise UserException(
+                f"Cannot rewrite columns: no table definition for {table_name}."
+            )
+
+        tmp_path = f"{out_table.full_path}.tmp"
+        with open(out_table.full_path, "r", newline="", encoding="utf-8") as src, \
+                open(tmp_path, "w", newline="", encoding="utf-8") as dst:
+            reader = csv.DictReader(src)
+            writer = csv.DictWriter(dst, fieldnames=columns)
+            writer.writeheader()
+            for row in reader:
+                writer.writerow({col: row.get(col, "") for col in columns})
+
+        os.replace(tmp_path, out_table.full_path)
+        # Update the table definition so the manifest reflects all columns
+        out_table.columns = columns
+        logging.info(f"Rewrote {table_name} with {len(columns)} columns")
 
     def finalize_table(self, table_name: str) -> None:
         """

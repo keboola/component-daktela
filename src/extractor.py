@@ -74,6 +74,11 @@ class DaktelaExtractor:
         for endpoint in self.requested_endpoints:
             await self._extract_table(endpoint)
 
+        # Persist the discovered output column set so the next run preserves
+        # columns even when the source data turns sparse.
+        if self._table_columns:
+            self.component.save_output_columns(self._table_columns)
+
         logging.info("Extraction completed successfully")
 
     def _get_table_endpoint(self, table_name: str, table_config: dict[str, Any]) -> str:
@@ -84,10 +89,10 @@ class DaktelaExtractor:
         """
         Determine which fields to extract for an endpoint.
 
-        Precedence:
-        1. User-configured fields (from configuration)
-        2. Schema from state (from previous runs)
-        3. None (fetch all fields from API)
+        Only user-configured fields are sent to the API. Schema state columns
+        are NOT used because they contain post-transformation names (e.g.
+        ``category_name`` instead of ``category``) that the API does not
+        recognise.
 
         Args:
             table_name: Name of the endpoint/table
@@ -95,7 +100,6 @@ class DaktelaExtractor:
         Returns:
             List of field names or None to fetch all fields
         """
-        # 1. User-configured fields take highest priority
         if table_name in self.configured_fields:
             fields = self.configured_fields[table_name]
             if fields:
@@ -104,17 +108,8 @@ class DaktelaExtractor:
                 )
                 return fields
 
-        # 2. Schema from state (previous runs)
-        state_fields = self.component.get_schema_for_endpoint(table_name)
-        if state_fields:
-            logging.info(
-                f"Using schema state fields for {table_name}: {len(state_fields)} fields"
-            )
-            return state_fields
-
-        # 3. No fields specified - will fetch all from API
         logging.info(
-            f"No field configuration for {table_name}, will fetch all fields from API"
+            f"No user-configured fields for {table_name}, will fetch all fields from API"
         )
         return None
 
@@ -163,14 +158,14 @@ class DaktelaExtractor:
                 # Write in configurable batches to reduce memory footprint
                 if len(write_batch) >= write_batch_size:
                     total_records += self._write_records(
-                        output_table_name, table_config, write_batch, table_name
+                        output_table_name, table_config, write_batch
                     )
                     write_batch = []
 
             # Write remaining records from this page
             if write_batch:
                 total_records += self._write_records(
-                    output_table_name, table_config, write_batch, table_name
+                    output_table_name, table_config, write_batch
                 )
 
         # Finalize table (write manifest)
@@ -182,21 +177,32 @@ class DaktelaExtractor:
         else:
             logging.warning(f"No data found for table: {table_name}")
 
-    def _get_columns(self, sample_record: dict[str, Any]) -> list[str]:
+    def _get_columns_from_batch(self, records: list[dict[str, Any]]) -> list[str]:
         """
-        Get ordered list of columns for output.
+        Build the column list from ALL records in a batch.
+
+        Scanning every record is necessary because relation fields (e.g.
+        ``user``, ``contact``) may be ``null`` in some records and nested
+        dicts in others.  After flattening, a null produces a scalar
+        column ``user`` while a dict produces ``user_name``,
+        ``user_title``, etc.  If only the first record is inspected and
+        it happens to have a null, the flattened columns from later
+        records are silently dropped.
 
         Args:
-            sample_record: Sample record to extract columns from
+            records: All transformed records in the current batch
 
         Returns:
-            Ordered list of column names
+            Ordered list of column names (union of all records)
         """
-        # Start with id
-        columns = ["id"]
+        seen: dict[str, None] = {}
+        for record in records:
+            for key in record:
+                if key not in seen:
+                    seen[key] = None
 
-        # Add all other columns from sample record
-        for key in sample_record.keys():
+        columns = ["id"]
+        for key in seen:
             if key not in columns:
                 columns.append(key)
 
@@ -207,18 +213,44 @@ class DaktelaExtractor:
         output_table_name: str,
         table_config: dict[str, Any],
         records: list[dict[str, Any]],
-        table_name: str,
     ) -> int:
         """Write a batch of records via the component and return written count."""
         if not records:
             return 0
 
         if output_table_name not in self._table_columns:
-            self._table_columns[output_table_name] = self._get_columns(records[0])
-            # Update schema state with discovered columns
-            self.component.update_schema_for_endpoint(
-                table_name, self._table_columns[output_table_name]
+            batch_columns = self._get_columns_from_batch(records)
+            # Seed from prior-run state so columns discovered in past runs
+            # remain in the output header even when today's data lacks them.
+            # Without this, Storage rejects the import with "missing columns"
+            # whenever the source data goes sparse for a flattened relation.
+            prior = self.component.get_output_columns(output_table_name)
+            self._table_columns[output_table_name] = list(
+                dict.fromkeys(prior + batch_columns)
             )
+            if prior:
+                added = len(self._table_columns[output_table_name]) - len(prior)
+                logging.info(
+                    f"Seeded {output_table_name} with {len(prior)} column(s) "
+                    f"from prior run; first batch added {added} new column(s)"
+                )
+        else:
+            existing = set(self._table_columns[output_table_name])
+            new_columns = list(
+                dict.fromkeys(k for r in records for k in r if k not in existing)
+            )
+            if new_columns:
+                extended = self._table_columns[output_table_name] + new_columns
+                # Rewrite the CSV first; only commit the in-memory column list
+                # once the (atomic) rewrite has succeeded, so an I/O failure
+                # cannot leave the header and the tracked columns out of sync.
+                self.component.rewrite_table_columns(output_table_name, extended)
+                self._table_columns[output_table_name] = extended
+                logging.info(
+                    f"Extended column list for {output_table_name} with "
+                    f"{len(new_columns)} new column(s)"
+                )
+                logging.debug(f"New columns for {output_table_name}: {new_columns}")
 
         self.component.write_table_data(
             table_name=output_table_name,

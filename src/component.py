@@ -86,7 +86,12 @@ class Component(ComponentBase):
     def save_output_columns(self, columns_by_table: dict[str, list[str]]) -> None:
         """Persist the per-table output-CSV column list for the next run."""
         state = self.get_state_file()
-        state["output_columns"] = {k: list(v) for k, v in columns_by_table.items()}
+        # Merge into existing state rather than replacing — each job processes
+        # one endpoint at a time, so other endpoints' column history must not
+        # be discarded by a run that did not touch them.
+        existing = state.get("output_columns", {})
+        existing.update({k: list(v) for k, v in columns_by_table.items()})
+        state["output_columns"] = existing
         state["last_updated"] = datetime.now(timezone.utc).isoformat()
         self.write_state_file(state)
         logging.info(

@@ -366,6 +366,36 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
         )
         extractor.component.rewrite_table_columns.assert_not_called()
 
+    def test_save_output_columns_merges_not_replaces(self):
+        """save_output_columns must not wipe column state for endpoints not in this run.
+
+        Each job processes one endpoint at a time. If the save overwrites the
+        entire map, the second endpoint's column state is erased on the first
+        endpoint's job, losing schema history for those tables.
+        """
+        from component import Component
+
+        persisted_state = {
+            "output_columns": {
+                "contacts.csv": ["id", "name", "email"],
+            }
+        }
+
+        component = Component.__new__(Component)
+        component.get_state_file = lambda: persisted_state
+        component.write_state_file = lambda s: persisted_state.update(s)
+
+        component.save_output_columns({"tickets.csv": ["id", "title"]})
+
+        self.assertEqual(
+            persisted_state["output_columns"]["contacts.csv"],
+            ["id", "name", "email"],
+        )
+        self.assertEqual(
+            persisted_state["output_columns"]["tickets.csv"],
+            ["id", "title"],
+        )
+
     def test_legacy_schema_state_is_honored(self):
         """State written by an earlier build (under "schema") still seeds columns.
 

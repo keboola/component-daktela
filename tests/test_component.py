@@ -273,11 +273,13 @@ class TestTransformerFlattenMixedFields(unittest.TestCase):
 class TestCrossBatchColumnExtension(unittest.TestCase):
     """Test column extension when a later batch introduces new columns."""
 
-    def _make_extractor(self):
+    def _make_extractor(self, prior_columns=None):
+        component = MagicMock()
+        component.get_output_columns.return_value = prior_columns or []
         return DaktelaExtractor(
             api_client=MagicMock(),
             table_configs={"tickets": {"primary_keys": ["name"]}},
-            component=MagicMock(),
+            component=component,
             url="https://test.daktela.com",
             requested_endpoints=["tickets"],
         )
@@ -317,6 +319,50 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
             "tickets.csv",
             {"primary_keys": ["name"]},
             [{"id": "2", "name": "t2"}],
+        )
+        extractor.component.rewrite_table_columns.assert_not_called()
+
+    def test_first_batch_seeds_columns_from_prior_run_state(self):
+        """Columns persisted by a previous run are included even when this batch lacks them.
+
+        Regression: without seeding, a later run on sparse data emits a CSV with
+        fewer columns than the Storage table created by an earlier run, and the
+        import fails with "Some columns are missing in the csv file".
+        """
+        extractor = self._make_extractor(
+            prior_columns=["id", "name", "user_name", "user_title"],
+        )
+        extractor._write_records(
+            "tickets.csv",
+            {"primary_keys": ["name"]},
+            # This batch has only "id" and "name" — "user_name"/"user_title" must
+            # still survive because they were known from the prior run.
+            [{"id": "1", "name": "t1"}],
+        )
+        self.assertEqual(
+            extractor._table_columns["tickets.csv"],
+            ["id", "name", "user_name", "user_title"],
+        )
+        # No rewrite on the first batch — the table is being created fresh, so
+        # write_table_data receives the seeded column list as its initial header.
+        extractor.component.rewrite_table_columns.assert_not_called()
+        extractor.component.write_table_data.assert_called_once()
+        kwargs = extractor.component.write_table_data.call_args.kwargs
+        self.assertEqual(
+            kwargs["columns"], ["id", "name", "user_name", "user_title"]
+        )
+
+    def test_seed_unions_with_new_columns_from_first_batch(self):
+        """A column that is new this run gets appended after the seeded columns."""
+        extractor = self._make_extractor(prior_columns=["id", "name"])
+        extractor._write_records(
+            "tickets.csv",
+            {"primary_keys": ["name"]},
+            [{"id": "1", "name": "t1", "brand_new_field": "x"}],
+        )
+        self.assertEqual(
+            extractor._table_columns["tickets.csv"],
+            ["id", "name", "brand_new_field"],
         )
         extractor.component.rewrite_table_columns.assert_not_called()
 

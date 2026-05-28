@@ -74,6 +74,11 @@ class DaktelaExtractor:
         for endpoint in self.requested_endpoints:
             await self._extract_table(endpoint)
 
+        # Persist the discovered output column set so the next run preserves
+        # columns even when the source data turns sparse.
+        if self._table_columns:
+            self.component.save_output_columns(self._table_columns)
+
         logging.info("Extraction completed successfully")
 
     def _get_table_endpoint(self, table_name: str, table_config: dict[str, Any]) -> str:
@@ -214,9 +219,21 @@ class DaktelaExtractor:
             return 0
 
         if output_table_name not in self._table_columns:
-            self._table_columns[output_table_name] = self._get_columns_from_batch(
-                records
+            batch_columns = self._get_columns_from_batch(records)
+            # Seed from prior-run state so columns discovered in past runs
+            # remain in the output header even when today's data lacks them.
+            # Without this, Storage rejects the import with "missing columns"
+            # whenever the source data goes sparse for a flattened relation.
+            prior = self.component.get_output_columns(output_table_name)
+            self._table_columns[output_table_name] = list(
+                dict.fromkeys(prior + batch_columns)
             )
+            if prior:
+                added = len(self._table_columns[output_table_name]) - len(prior)
+                logging.info(
+                    f"Seeded {output_table_name} with {len(prior)} column(s) "
+                    f"from prior run; first batch added {added} new column(s)"
+                )
         else:
             existing = set(self._table_columns[output_table_name])
             new_columns = list(

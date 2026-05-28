@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import traceback
+from datetime import datetime, timezone
 from typing import Any
 
 import keboola.utils
@@ -52,6 +53,33 @@ class Component(ComponentBase):
             logging.exception("Unhandled error in component execution")
             traceback.print_exc(file=sys.stderr)
             sys.exit(2)
+
+    def get_output_columns(self, table_name: str) -> list[str]:
+        """Return the persisted output-CSV column list for ``table_name`` (or []).
+
+        Used by the extractor to seed the column list on the first batch of a run,
+        so columns discovered in previous runs are kept in the output header even
+        when the current batch happens not to contain them.  This is what stops
+        Storage rejecting the import with "missing columns" after schema drift.
+
+        The state key is deliberately named ``output_columns`` and the methods are
+        named ``output_columns`` (not ``schema``) so this CSV-side state cannot be
+        misused as the API ``fields`` parameter -- the two namespaces are
+        post-transformation (e.g. ``user_name``) vs raw API (``user``), and
+        conflating them was the original "empty nested columns" bug.
+        """
+        state = self.get_state_file()
+        return list(state.get("output_columns", {}).get(table_name, []))
+
+    def save_output_columns(self, columns_by_table: dict[str, list[str]]) -> None:
+        """Persist the per-table output-CSV column list for the next run."""
+        state = self.get_state_file()
+        state["output_columns"] = {k: list(v) for k, v in columns_by_table.items()}
+        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        self.write_state_file(state)
+        logging.info(
+            f"Saved output column state for {len(columns_by_table)} table(s)"
+        )
 
     @sync_action("testConnection")
     def test_connection(self) -> dict[str, str]:

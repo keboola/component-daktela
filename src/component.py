@@ -69,7 +69,19 @@ class Component(ComponentBase):
         conflating them was the original "empty nested columns" bug.
         """
         state = self.get_state_file()
-        return list(state.get("output_columns", {}).get(table_name, []))
+        current = state.get("output_columns", {}).get(table_name)
+        if current:
+            return list(current)
+        # Migration: an earlier build of this component persisted discovered
+        # columns under ``state["schema"][endpoint]["columns"]``, keyed by the
+        # bare endpoint name (no ``.csv``).  Honor that on the first run after
+        # upgrade so columns from a prior successful job aren't lost.
+        legacy = (
+            state.get("schema", {})
+            .get(table_name.removesuffix(".csv"), {})
+            .get("columns", [])
+        )
+        return list(legacy)
 
     def save_output_columns(self, columns_by_table: dict[str, list[str]]) -> None:
         """Persist the per-table output-CSV column list for the next run."""

@@ -366,6 +366,31 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
         )
         extractor.component.rewrite_table_columns.assert_not_called()
 
+    def test_legacy_schema_state_is_honored(self):
+        """State written by an earlier build (under "schema") still seeds columns.
+
+        The previous build stored ``state["schema"][endpoint]["columns"]``;
+        the new build reads ``state["output_columns"][table_name]``.  Without
+        the migration, the first run after upgrade would lose every column
+        discovered by prior successful jobs.
+        """
+        # Real Component (not mocked) -- exercises the migration path itself.
+        from component import Component
+
+        legacy_state = {
+            "schema": {
+                "tickets": {
+                    "columns": ["id", "name", "user_name", "user_title"],
+                }
+            }
+        }
+        component = Component.__new__(Component)
+        component.get_state_file = lambda: legacy_state
+        self.assertEqual(
+            component.get_output_columns("tickets.csv"),
+            ["id", "name", "user_name", "user_title"],
+        )
+
     def test_columns_not_committed_when_rewrite_fails(self):
         """If the rewrite fails, the in-memory column list stays in sync with disk."""
         extractor = self._make_extractor()

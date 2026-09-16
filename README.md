@@ -16,7 +16,7 @@ This component extracts data from Daktela API v6 endpoints and loads them into K
 
 ### Supported Endpoints
 
-- `accounts`, `activities`, `activitiesCall`, `activitiesChat`, `activitiesEmail`
+- `accounts`, `activities`, `activitiesCall`, `activitiesCallChannels`, `activitiesCallFlow`, `activitiesChat`, `activitiesEmail`
 - `campaignsRecords`, `contacts`, `crmRecords`, `groups`, `pauses`
 - `queues`, `statuses`, `templates`, `tickets`, `users`
 
@@ -183,6 +183,7 @@ The component creates one output table per endpoint:
 
 - Table name: `{endpoint}.csv` (e.g., `contacts.csv`, `tickets.csv`)
 - Primary key: `name` (or `id_call` for `activitiesCall` endpoint)
+- For `activitiesCallChannels` and `activitiesCallFlow`, the parent call is returned as a nested `call` / `interaction` object and flattened into `call_*` / `interaction_*` columns. Use `fields` to limit the columns (e.g. `name,call,user,state,time_ringing,time_speaking,time_closed,cause`).
 - Incremental mode: Supported via primary key
 
 ## Development

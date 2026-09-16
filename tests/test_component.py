@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from keboola.component.exceptions import UserException  # noqa: E402
 from configuration import Configuration  # noqa: E402
+from daktela_client import ACTIVITIES_FILTER_FIELDS  # noqa: E402
 from extractor import DaktelaExtractor  # noqa: E402
 from transformer import DataTransformer  # noqa: E402
 
@@ -147,6 +148,14 @@ class TestMergedConfiguration(unittest.TestCase):
         self.assertEqual(config.date_from, "7 days ago")
         self.assertEqual(config.date_to, "today")
         self.assertIsNone(config.fields)
+
+
+class TestDateFilterMapping(unittest.TestCase):
+    def test_activities_call_subresource_filter_fields(self):
+        self.assertEqual(
+            ACTIVITIES_FILTER_FIELDS["activitiesCallChannels"], "time_ringing"
+        )
+        self.assertEqual(ACTIVITIES_FILTER_FIELDS["activitiesCallFlow"], "time")
 
 
 class TestGetFieldsForEndpoint(unittest.TestCase):

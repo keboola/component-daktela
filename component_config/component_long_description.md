@@ -7,6 +7,8 @@ The component can extract data from the following Daktela API endpoints:
 - **accounts** - Account information
 - **activities** - General activity records
 - **activitiesCall** - Phone call activities
+- **activitiesCallChannels** - Call channel activities
+- **activitiesCallFlow** - Call flow activities
 - **activitiesChat** - Chat conversation activities
 - **activitiesEmail** - Email activities
 - **campaignsRecords** - Campaign records

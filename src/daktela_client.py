@@ -34,6 +34,8 @@ FILTER_PAGINATED_ENDPOINTS = {"tickets", "contacts"}
 ACTIVITIES_FILTER_FIELDS = {
     "activities": "time",
     "activitiesCall": "call_time",
+    "activitiesCallChannels": "time_ringing",
+    "activitiesCallFlow": "time",
     "activitiesChat": "time",
     "activitiesEmail": "time",
 }

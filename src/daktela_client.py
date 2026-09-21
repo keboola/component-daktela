@@ -42,6 +42,14 @@ ACTIVITIES_FILTER_FIELDS = {
 """Endpoints that should be filtered on a time field, mapped per endpoint."""
 
 
+def _add_fields_params(
+    params: dict[str, Any], fields: list[str] | None
+) -> None:
+    if fields:
+        for i, field in enumerate(fields):
+            params[f"fields[{i}]"] = field
+
+
 class DaktelaApiClient:
     """Async HTTP client for Daktela API with built-in authentication and pagination."""
 
@@ -250,8 +258,7 @@ class DaktelaApiClient:
         params = {"accessToken": self.access_token}
 
         # Add fields parameter if specified
-        if fields:
-            params["fields"] = ",".join(fields)
+        _add_fields_params(params, fields)
 
         # Apply date filtering for supported endpoints
         if (
@@ -316,9 +323,8 @@ class DaktelaApiClient:
                 params = {"accessToken": self.access_token}
                 params_count = {"accessToken": self.access_token, "skip": 0, "take": 1}
                 # Preserve fields parameter if it was set
-                if fields:
-                    params["fields"] = ",".join(fields)
-                    params_count["fields"] = ",".join(fields)
+                _add_fields_params(params, fields)
+                _add_fields_params(params_count, fields)
                 first_response = await self.client.get(
                     endpoint_path, params=params_count
                 )

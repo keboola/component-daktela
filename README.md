@@ -107,6 +107,7 @@ Each configuration row defines one endpoint to extract:
 - **date_to**: End date for extraction (required, same formats as `date_from`)
 - **fields**: (Optional) Array of field names to extract
   - If empty or omitted, all available fields will be extracted
+  - Nested sub-fields can be selected with dot notation, such as `"user.name"` or `"call.id_call"`
 
 #### Field Discovery
 

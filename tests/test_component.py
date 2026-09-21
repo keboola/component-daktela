@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from keboola.component.exceptions import UserException  # noqa: E402
 from configuration import Configuration  # noqa: E402
-from daktela_client import ACTIVITIES_FILTER_FIELDS  # noqa: E402
+from daktela_client import ACTIVITIES_FILTER_FIELDS, _add_fields_params  # noqa: E402
 from extractor import DaktelaExtractor  # noqa: E402
 from transformer import DataTransformer  # noqa: E402
 
@@ -156,6 +156,20 @@ class TestDateFilterMapping(unittest.TestCase):
             ACTIVITIES_FILTER_FIELDS["activitiesCallChannels"], "time_ringing"
         )
         self.assertEqual(ACTIVITIES_FILTER_FIELDS["activitiesCallFlow"], "time")
+
+
+class TestFieldsParams(unittest.TestCase):
+    def test_add_fields_params(self):
+        params = {}
+        _add_fields_params(params, ["name", "user.name"])
+        self.assertEqual(
+            params, {"fields[0]": "name", "fields[1]": "user.name"}
+        )
+
+        for fields in (None, []):
+            params = {"accessToken": "token"}
+            _add_fields_params(params, fields)
+            self.assertEqual(params, {"accessToken": "token"})
 
 
 class TestGetFieldsForEndpoint(unittest.TestCase):

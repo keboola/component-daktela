@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from keboola.component.exceptions import UserException  # noqa: E402
+from component import resolve_primary_keys  # noqa: E402
 from configuration import Configuration  # noqa: E402
 from daktela_client import ACTIVITIES_FILTER_FIELDS, _add_fields_params  # noqa: E402
 from extractor import DaktelaExtractor  # noqa: E402
@@ -162,9 +163,7 @@ class TestFieldsParams(unittest.TestCase):
     def test_add_fields_params(self):
         params = {}
         _add_fields_params(params, ["name", "user.name"])
-        self.assertEqual(
-            params, {"fields[0]": "name", "fields[1]": "user.name"}
-        )
+        self.assertEqual(params, {"fields[0]": "name", "fields[1]": "user.name"})
 
         for fields in (None, []):
             params = {"accessToken": "token"}
@@ -371,9 +370,7 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
         extractor.component.rewrite_table_columns.assert_not_called()
         extractor.component.write_table_data.assert_called_once()
         kwargs = extractor.component.write_table_data.call_args.kwargs
-        self.assertEqual(
-            kwargs["columns"], ["id", "name", "user_name", "user_title"]
-        )
+        self.assertEqual(kwargs["columns"], ["id", "name", "user_name", "user_title"])
 
     def test_seed_unions_with_new_columns_from_first_batch(self):
         """A column that is new this run gets appended after the seeded columns."""
@@ -461,3 +458,174 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPrimaryKeyResolution(unittest.TestCase):
+    """The configured primary key must win over the per-endpoint default."""
+
+    def test_endpoint_defaults(self):
+        self.assertEqual(resolve_primary_keys("tickets", None), (["name"], True))
+        self.assertEqual(
+            resolve_primary_keys("activitiesCall", None), (["id_call"], True)
+        )
+        self.assertEqual(
+            resolve_primary_keys("activitiesCallChannels", None), (["name"], True)
+        )
+        # activitiesCallFlow has no "name" field, so it gets no default key.
+        self.assertEqual(resolve_primary_keys("activitiesCallFlow", None), ([], True))
+
+    def test_explicit_empty_primary_key_is_honoured(self):
+        """An explicitly empty primary_key must not fall back to the default.
+
+        Regression: ``if config.destination.primary_key:`` treated ``[]`` as
+        unset, so a user who cleared the key still got ``name`` and the job
+        failed with "Primary key column name not found in schema".
+        """
+        self.assertEqual(resolve_primary_keys("activitiesCallFlow", []), ([], False))
+        self.assertEqual(resolve_primary_keys("tickets", []), ([], False))
+
+    def test_configured_primary_key_wins(self):
+        self.assertEqual(
+            resolve_primary_keys("activitiesCall", ["cdr", "time"]),
+            (["cdr", "time"], False),
+        )
+
+    def test_empty_list_survives_the_configuration_model(self):
+        """Pydantic must keep [] distinct from None on the way in."""
+        from configuration import Destination
+
+        self.assertEqual(Destination(primary_key=[]).primary_key, [])
+        self.assertIsNone(Destination().primary_key)
+
+
+class TestPrimaryKeyInRequestedFields(unittest.TestCase):
+    """The primary key must always be requested from the API."""
+
+    def _make_extractor(self, primary_keys, configured_fields):
+        return DaktelaExtractor(
+            api_client=MagicMock(),
+            table_configs={"channels": {"primary_keys": primary_keys}},
+            component=MagicMock(),
+            url="https://test.daktela.com",
+            requested_endpoints=["channels"],
+            configured_fields={"channels": configured_fields},
+        )
+
+    def test_missing_primary_key_is_appended(self):
+        """A fields list without the key would make Storage reject the import."""
+        extractor = self._make_extractor(["name"], ["user.name", "time_ringing"])
+        self.assertEqual(
+            extractor._get_fields_for_endpoint("channels"),
+            ["user.name", "time_ringing", "name"],
+        )
+
+    def test_present_primary_key_is_not_duplicated(self):
+        extractor = self._make_extractor(["name"], ["name", "time_ringing"])
+        self.assertEqual(
+            extractor._get_fields_for_endpoint("channels"),
+            ["name", "time_ringing"],
+        )
+
+    def test_no_primary_key_leaves_fields_unchanged(self):
+        extractor = self._make_extractor([], ["action", "time"])
+        self.assertEqual(
+            extractor._get_fields_for_endpoint("channels"), ["action", "time"]
+        )
+
+
+class TestPrunePriorColumns(unittest.TestCase):
+    """A narrowed `fields` selection must narrow the output table."""
+
+    def _make_extractor(self):
+        return DaktelaExtractor(
+            api_client=MagicMock(),
+            table_configs={"channels": {"primary_keys": ["name"]}},
+            component=MagicMock(),
+            url="https://test.daktela.com",
+            requested_endpoints=["channels"],
+        )
+
+    def test_no_fields_keeps_every_prior_column(self):
+        """Without `fields`, the drift protection must behave exactly as before."""
+        extractor = self._make_extractor()
+        prior = ["id", "name", "user_password_reset", "call_contact_firstname"]
+        self.assertEqual(
+            extractor._prune_prior_columns(prior, None, {"id", "name"}), prior
+        )
+        self.assertEqual(
+            extractor._prune_prior_columns(prior, [], {"id", "name"}), prior
+        )
+
+    def test_dotted_field_keeps_only_that_subcolumn(self):
+        """`user.name` must not keep `user_password_reset` from an earlier run."""
+        extractor = self._make_extractor()
+        prior = [
+            "id",
+            "name",
+            "user",
+            "user_name",
+            "user_password_reset",
+            "user_options_registration_ids",
+            "call_contact_firstname",
+        ]
+        self.assertEqual(
+            extractor._prune_prior_columns(
+                prior, ["name", "user.name"], {"id", "name"}
+            ),
+            # "user" stays: the relation is a scalar column on rows where it is null.
+            ["id", "name", "user", "user_name"],
+        )
+
+    def test_whole_object_field_keeps_its_children(self):
+        """Requesting `user` (not `user.name`) still returns every sub-column."""
+        extractor = self._make_extractor()
+        prior = ["id", "name", "user", "user_name", "user_title", "call_id_call"]
+        self.assertEqual(
+            extractor._prune_prior_columns(prior, ["name", "user"], {"id", "name"}),
+            ["id", "name", "user", "user_name", "user_title"],
+        )
+
+    def test_primary_key_and_id_always_kept(self):
+        extractor = self._make_extractor()
+        prior = ["id", "name", "stale_column"]
+        self.assertEqual(
+            extractor._prune_prior_columns(prior, ["time_ringing"], {"id", "name"}),
+            ["id", "name"],
+        )
+
+
+class TestResolvePrimaryKeys(unittest.TestCase):
+    """A primary key that the data does not contain must be handled clearly."""
+
+    def _make_extractor(self):
+        return DaktelaExtractor(
+            api_client=MagicMock(),
+            table_configs={"flow": {"primary_keys": ["name"]}},
+            component=MagicMock(),
+            url="https://test.daktela.com",
+            requested_endpoints=["flow"],
+        )
+
+    def test_missing_default_key_is_dropped(self):
+        """A default key the endpoint does not have must not fail the job."""
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys("flow.csv", table_config)
+        self.assertEqual(table_config["primary_keys"], [])
+
+    def test_missing_user_key_raises_named_error(self):
+        """A key the user chose must fail with an error that names the column."""
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["cdr"], "primary_key_is_default": False}
+        with self.assertRaises(UserException) as ctx:
+            extractor._resolve_primary_keys("flow.csv", table_config)
+        self.assertIn("cdr", str(ctx.exception))
+
+    def test_present_key_is_untouched(self):
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "name", "action"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys("flow.csv", table_config)
+        self.assertEqual(table_config["primary_keys"], ["name"])

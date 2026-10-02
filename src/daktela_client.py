@@ -42,9 +42,7 @@ ACTIVITIES_FILTER_FIELDS = {
 """Endpoints that should be filtered on a time field, mapped per endpoint."""
 
 
-def _add_fields_params(
-    params: dict[str, Any], fields: list[str] | None
-) -> None:
+def _add_fields_params(params: dict[str, Any], fields: list[str] | None) -> None:
     if fields:
         for i, field in enumerate(fields):
             params[f"fields[{i}]"] = field

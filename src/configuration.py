@@ -1,7 +1,14 @@
 import logging
 
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 DEFAULT_MAX_CONCURRENT_REQUESTS = (
     10  # Default maximum number of concurrent API requests

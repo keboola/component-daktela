@@ -108,6 +108,15 @@ Each configuration row defines one endpoint to extract:
 - **fields**: (Optional) Array of field names to extract
   - If empty or omitted, all available fields will be extracted
   - Nested sub-fields can be selected with dot notation, such as `"user.name"` or `"call.id_call"`
+  - Dot notation keeps the output narrow. `"user"` returns the whole user object,
+    which is flattened into one column per property. `"user.name"` returns only
+    the agent login.
+  - The primary-key column is always requested, even if you leave it out of
+    `fields`. Storage rejects an import whose primary key is not in the table.
+  - When you narrow `fields`, the columns that the new selection cannot produce
+    are removed from the output on the next run. You do not need to reset the
+    configuration state. You may still have to drop the destination table once,
+    because the table in Storage keeps the columns of the previous run.
 
 #### Field Discovery
 
@@ -183,7 +192,11 @@ Use the **"Discover Available Fields"** sync action to see all available fields 
 The component creates one output table per endpoint:
 
 - Table name: `{endpoint}.csv` (e.g., `contacts.csv`, `tickets.csv`)
-- Primary key: `name` (or `id_call` for `activitiesCall` endpoint)
+- Primary key: `name` by default, `id_call` for `activitiesCall`, and none for
+  `activitiesCallFlow` (that endpoint has no `name` field and the API exposes no
+  natural unique key for it).
+- To extract a table without a primary key, set `destination.primary_key` to an
+  empty list. To use your own key, list the output column names there.
 - For `activitiesCallChannels` and `activitiesCallFlow`, the parent call is returned as a nested `call` / `interaction` object and flattened into `call_*` / `interaction_*` columns. Use `fields` to limit the columns (e.g. `name,call,user,state,time_ringing,time_speaking,time_closed,cause`).
 - Incremental mode: Supported via primary key
 

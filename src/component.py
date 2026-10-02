@@ -19,6 +19,44 @@ from configuration import Configuration
 from daktela_client import DaktelaApiClient
 from extractor import DaktelaExtractor
 
+DEFAULT_PRIMARY_KEY = ["name"]
+"""Primary key used for endpoints whose records are keyed by ``name``."""
+
+DEFAULT_PRIMARY_KEYS = {
+    "activitiesCall": ["id_call"],
+    # activitiesCallFlow has no ``name`` field (action, activity, cdr,
+    # interaction, params, time) and the Daktela API exposes no natural unique
+    # key for it, so no primary key is applied by default.  Full load works;
+    # for incremental load the user must configure a key explicitly.
+    "activitiesCallFlow": [],
+}
+"""Per-endpoint default primary keys. Endpoints not listed use DEFAULT_PRIMARY_KEY."""
+
+
+def resolve_primary_keys(
+    endpoint: str, configured: list[str] | None
+) -> tuple[list[str], bool]:
+    """
+    Resolve the primary key for an endpoint.
+
+    The check is ``configured is not None``, not truthiness, on purpose: an
+    explicitly empty list means "this table has no primary key" and must be
+    honoured.  Treating ``[]`` as "unset" silently re-applied the default
+    ``name`` key, so an endpoint without a ``name`` column could not be run at
+    all -- the job failed with "Primary key column name not found in schema"
+    and clearing the key in the configuration had no effect.
+
+    Args:
+        endpoint: Endpoint name
+        configured: Primary key from the row configuration (None if unset)
+
+    Returns:
+        (primary key columns, whether the key came from the defaults)
+    """
+    if configured is not None:
+        return list(configured), False
+    return list(DEFAULT_PRIMARY_KEYS.get(endpoint, DEFAULT_PRIMARY_KEY)), True
+
 
 class Component(ComponentBase):
     """
@@ -94,9 +132,7 @@ class Component(ComponentBase):
         state["output_columns"] = existing
         state["last_updated"] = datetime.now(timezone.utc).isoformat()
         self.write_state_file(state)
-        logging.info(
-            f"Saved output column state for {len(columns_by_table)} table(s)"
-        )
+        logging.info(f"Saved output column state for {len(columns_by_table)} table(s)")
 
     @sync_action("testConnection")
     def test_connection(self) -> dict[str, str]:
@@ -269,15 +305,13 @@ class Component(ComponentBase):
         endpoint = config.endpoint
         table_configs = {}
 
-        # Use primary_key from config if set, otherwise use defaults
-        if config.destination.primary_key:
-            primary_keys = config.destination.primary_key
-        elif endpoint == "activitiesCall":
-            primary_keys = ["id_call"]
-        else:
-            primary_keys = ["name"]
-
-        table_configs[endpoint] = {"primary_keys": primary_keys}
+        primary_keys, primary_key_is_default = resolve_primary_keys(
+            endpoint, config.destination.primary_key
+        )
+        table_configs[endpoint] = {
+            "primary_keys": primary_keys,
+            "primary_key_is_default": primary_key_is_default,
+        }
 
         # Prepare configured fields dict (only for this endpoint)
         configured_fields = {}
@@ -382,8 +416,10 @@ class Component(ComponentBase):
             )
 
         tmp_path = f"{out_table.full_path}.tmp"
-        with open(out_table.full_path, "r", newline="", encoding="utf-8") as src, \
-                open(tmp_path, "w", newline="", encoding="utf-8") as dst:
+        with (
+            open(out_table.full_path, "r", newline="", encoding="utf-8") as src,
+            open(tmp_path, "w", newline="", encoding="utf-8") as dst,
+        ):
             reader = csv.DictReader(src)
             writer = csv.DictWriter(dst, fieldnames=columns)
             writer.writeheader()

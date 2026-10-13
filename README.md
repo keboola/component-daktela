@@ -192,7 +192,10 @@ The component creates one output table per endpoint:
 - To extract a table without a primary key, set `destination.primary_key` to an
   empty list. To use your own key, list the output column names there.
 - For `activitiesCallChannels` and `activitiesCallFlow`, the parent call is returned as a nested `call` / `interaction` object and flattened into `call_*` / `interaction_*` columns. Use `fields` to limit the columns (e.g. `name,call,user,state,time_ringing,time_speaking,time_closed,cause`).
-- Incremental mode: Supported via primary key
+- Incremental mode: Supported via primary key. If no key is set and the default
+  key is empty or missing from the data (for example `activitiesCallFlow`), the
+  job fails and asks for a key. An explicitly empty key appends rows without
+  deduplication and logs a warning.
 
 ## Development
 

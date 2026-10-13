@@ -531,11 +531,28 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._resolve_primary_keys("flow.csv", table_config)
         self.assertEqual(table_config["primary_keys"], ["name"])
 
-    def test_incremental_without_primary_key_warns(self):
-        """Incremental load with no key appends duplicates, so the user is warned."""
+    def test_incremental_without_default_primary_key_raises(self):
+        """No key set by the user: incremental would append duplicates, so fail."""
         extractor = self._make_extractor(incremental=True)
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": [], "primary_key_is_default": True}
+        with self.assertRaises(UserException) as ctx:
+            extractor._resolve_primary_keys("flow.csv", table_config)
+        self.assertIn("without deduplication", str(ctx.exception))
+
+    def test_incremental_dropped_default_primary_key_raises(self):
+        """A default key dropped as missing must not leave incremental keyless."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        with self.assertRaises(UserException):
+            extractor._resolve_primary_keys("flow.csv", table_config)
+
+    def test_incremental_with_explicit_empty_primary_key_warns(self):
+        """An explicit empty key is a deliberate append-only load: warn only."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": False}
         with self.assertLogs(level="WARNING") as logs:
             extractor._resolve_primary_keys("flow.csv", table_config)
         self.assertIn("without deduplication", logs.output[0])

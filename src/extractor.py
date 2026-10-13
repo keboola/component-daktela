@@ -222,7 +222,9 @@ class DaktelaExtractor:
         column instead.
 
         An incremental load that ends up with no primary key appends rows without
-        deduplication, so it is logged as a warning.
+        deduplication.  If the user set no key, that fails with an error asking
+        for one.  An explicitly empty key is a deliberate append-only load, so it
+        is only logged as a warning.
 
         Args:
             output_table_name: Output table being written
@@ -250,6 +252,13 @@ class DaktelaExtractor:
             ]
 
         if self.incremental and not table_config.get("primary_keys"):
+            if table_config.get("primary_key_is_default"):
+                raise UserException(
+                    f"Incremental load of {output_table_name} has no primary key, so "
+                    f"rows would be appended without deduplication. Set a primary key "
+                    f"in the row configuration (several columns can be combined), or "
+                    f"switch to full load."
+                )
             logging.warning(
                 f"Incremental load of {output_table_name} has no primary key, so "
                 f"rows are appended without deduplication. Set a primary key in the "

@@ -4,7 +4,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from keboola.component.exceptions import UserException
-from keboola.utils.header_normalizer import DefaultHeaderNormalizer
 
 from configuration import DEFAULT_BATCH_SIZE
 from daktela_client import DaktelaApiClient
@@ -56,10 +55,6 @@ class DaktelaExtractor:
         self.incremental = incremental
         self.configured_fields = configured_fields or {}
         self._table_columns: dict[str, list[str]] = {}
-        # API fields actually requested per output table, used to prune stale
-        # columns carried over from previous runs.
-        self._requested_fields: dict[str, list[str] | None] = {}
-        self._header_normalizer = DefaultHeaderNormalizer()
 
     async def extract_all(self):
         """
@@ -108,7 +103,6 @@ class DaktelaExtractor:
         if table_name in self.configured_fields:
             fields = self.configured_fields[table_name]
             if fields:
-                fields = self._with_primary_key_fields(table_name, fields)
                 logging.info(
                     f"Using user-configured fields for {table_name}: {len(fields)} fields"
                 )
@@ -118,96 +112,6 @@ class DaktelaExtractor:
             f"No user-configured fields for {table_name}, will fetch all fields from API"
         )
         return None
-
-    def _with_primary_key_fields(self, table_name: str, fields: list[str]) -> list[str]:
-        """
-        Append the primary-key columns to the requested API fields.
-
-        Storage rejects an import whose primary key is not in the table header,
-        so a ``fields`` list that omits the key makes the job fail with an
-        error that does not name the real cause.  The key columns are requested
-        in addition to what the user asked for; Daktela silently ignores a field
-        name it does not recognise, so this cannot break an endpoint whose key
-        is not a real API field.
-
-        Args:
-            table_name: Name of the endpoint/table
-            fields: User-configured field names
-
-        Returns:
-            The field list, extended with any missing primary-key column
-        """
-        primary_keys = self.table_configs.get(table_name, {}).get("primary_keys") or []
-        normalized = {self._normalize_field(f) for f in fields}
-
-        extended = list(fields)
-        for key in primary_keys:
-            if self._normalize_field(key) not in normalized:
-                extended.append(key)
-                normalized.add(self._normalize_field(key))
-                logging.info(
-                    f"Added primary-key column '{key}' to the requested fields for "
-                    f"{table_name}; Storage requires it in the output table."
-                )
-        return extended
-
-    def _normalize_field(self, field: str) -> str:
-        """Return the output column name an API field maps to after transformation."""
-        flattened = "_".join(part for part in field.split(".") if part)
-        return self._header_normalizer._normalize_column_name(flattened)
-
-    def _prune_prior_columns(
-        self,
-        prior: list[str],
-        fields: list[str] | None,
-        keep: set[str],
-    ) -> list[str]:
-        """
-        Drop prior-run columns that the current ``fields`` selection cannot produce.
-
-        The saved column state exists so a sparse run does not lose columns that
-        earlier runs wrote.  When the user narrows ``fields``, however, that same
-        state keeps every previously seen column in the header forever, so the
-        narrower selection appears to have no effect and personal data columns
-        stay in the output table.  Pruning makes a ``fields`` change take effect
-        on the next run, with no manual state reset.
-
-        With no ``fields`` configured the state is returned unchanged, so the
-        drift protection is unaffected for every other configuration.
-
-        Args:
-            prior: Column list persisted by previous runs
-            fields: API fields requested for this run (None = all fields)
-            keep: Columns to keep regardless (``id`` and the primary key)
-
-        Returns:
-            The prior columns that the current selection can still produce
-        """
-        if not fields:
-            return prior
-
-        allowed_exact = set(keep)
-        allowed_prefixes = set()
-        for field in fields:
-            parts = [part for part in field.split(".") if part]
-            if not parts:
-                continue
-            # "user.name" -> the flattened column "user_name"
-            allowed_exact.add(self._normalize_field(field))
-            # A relation that is null on a row stays a scalar column ("user"),
-            # so the bare root is always a possible output column.
-            root = self._header_normalizer._normalize_column_name(parts[0])
-            allowed_exact.add(root)
-            if len(parts) == 1:
-                # The whole object was requested, so any of its children may appear.
-                allowed_prefixes.add(f"{root}_")
-
-        return [
-            column
-            for column in prior
-            if column in allowed_exact
-            or any(column.startswith(prefix) for prefix in allowed_prefixes)
-        ]
 
     async def _extract_table(self, table_name: str):
         """
@@ -232,7 +136,6 @@ class DaktelaExtractor:
 
         # Get fields to fetch using precedence logic
         fields = self._get_fields_for_endpoint(table_name)
-        self._requested_fields[output_table_name] = fields
 
         # Fetch and process data in pages
         total_records = 0
@@ -365,20 +268,6 @@ class DaktelaExtractor:
             # Without this, Storage rejects the import with "missing columns"
             # whenever the source data goes sparse for a flattened relation.
             prior = self.component.get_output_columns(output_table_name)
-            # A narrowed `fields` selection must actually narrow the output, so
-            # drop prior columns the current selection can no longer produce.
-            kept = self._prune_prior_columns(
-                prior,
-                self._requested_fields.get(output_table_name),
-                keep={"id", *(table_config.get("primary_keys") or [])},
-            )
-            if len(kept) != len(prior):
-                logging.info(
-                    f"Dropped {len(prior) - len(kept)} column(s) from the saved state "
-                    f"for {output_table_name}: the configured 'fields' selection no "
-                    f"longer produces them."
-                )
-            prior = kept
             self._table_columns[output_table_name] = list(
                 dict.fromkeys(prior + batch_columns)
             )

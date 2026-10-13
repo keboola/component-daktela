@@ -111,12 +111,6 @@ Each configuration row defines one endpoint to extract:
   - Dot notation keeps the output narrow. `"user"` returns the whole user object,
     which is flattened into one column per property. `"user.name"` returns only
     the agent login.
-  - The primary-key column is always requested, even if you leave it out of
-    `fields`. Storage rejects an import whose primary key is not in the table.
-  - When you narrow `fields`, the columns that the new selection cannot produce
-    are removed from the output on the next run. You do not need to reset the
-    configuration state. You may still have to drop the destination table once,
-    because the table in Storage keeps the columns of the previous run.
 
 #### Field Discovery
 

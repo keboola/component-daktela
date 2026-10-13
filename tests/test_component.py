@@ -456,10 +456,6 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
         self.assertEqual(extractor._table_columns["tickets.csv"], ["id", "name"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestPrimaryKeyResolution(unittest.TestCase):
     """The configured primary key must win over the per-endpoint default."""
 
@@ -501,13 +497,14 @@ class TestPrimaryKeyResolution(unittest.TestCase):
 class TestResolvePrimaryKeys(unittest.TestCase):
     """A primary key that the data does not contain must be handled clearly."""
 
-    def _make_extractor(self):
+    def _make_extractor(self, incremental=False):
         return DaktelaExtractor(
             api_client=MagicMock(),
             table_configs={"flow": {"primary_keys": ["name"]}},
             component=MagicMock(),
             url="https://test.daktela.com",
             requested_endpoints=["flow"],
+            incremental=incremental,
         )
 
     def test_missing_default_key_is_dropped(self):
@@ -533,3 +530,23 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
         extractor._resolve_primary_keys("flow.csv", table_config)
         self.assertEqual(table_config["primary_keys"], ["name"])
+
+    def test_incremental_without_primary_key_warns(self):
+        """Incremental load with no key appends duplicates, so the user is warned."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": True}
+        with self.assertLogs(level="WARNING") as logs:
+            extractor._resolve_primary_keys("flow.csv", table_config)
+        self.assertIn("without deduplication", logs.output[0])
+
+    def test_full_load_without_primary_key_does_not_warn(self):
+        extractor = self._make_extractor(incremental=False)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": True}
+        with self.assertNoLogs(level="WARNING"):
+            extractor._resolve_primary_keys("flow.csv", table_config)
+
+
+if __name__ == "__main__":
+    unittest.main()

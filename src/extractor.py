@@ -221,35 +221,40 @@ class DaktelaExtractor:
         configured is their intent, so it raises an error that names the missing
         column instead.
 
+        An incremental load that ends up with no primary key appends rows without
+        deduplication, so it is logged as a warning.
+
         Args:
             output_table_name: Output table being written
             table_config: Table configuration (mutated in place)
         """
         primary_keys = table_config.get("primary_keys") or []
-        if not primary_keys:
-            return
-
         columns = set(self._table_columns.get(output_table_name, []))
         missing = [key for key in primary_keys if key not in columns]
-        if not missing:
-            return
 
-        if table_config.get("primary_key_is_default"):
-            remaining = [key for key in primary_keys if key not in missing]
+        if missing:
+            if not table_config.get("primary_key_is_default"):
+                raise UserException(
+                    f"Primary key column(s) {missing} are not present in the extracted "
+                    f"data for {output_table_name}. Available columns: "
+                    f"{sorted(columns)}. Change the primary key in the row "
+                    f"configuration, or add the column to the 'fields' list."
+                )
             logging.warning(
                 f"Default primary key column(s) {missing} are not present in "
                 f"{output_table_name}; continuing without them. Set a primary key "
                 f"in the row configuration if this table needs one."
             )
-            table_config["primary_keys"] = remaining
-            return
+            table_config["primary_keys"] = [
+                key for key in primary_keys if key not in missing
+            ]
 
-        raise UserException(
-            f"Primary key column(s) {missing} are not present in the extracted data "
-            f"for {output_table_name}. Available columns: {sorted(columns)}. "
-            f"Change the primary key in the row configuration, or add the column to "
-            f"the 'fields' list."
-        )
+        if self.incremental and not table_config.get("primary_keys"):
+            logging.warning(
+                f"Incremental load of {output_table_name} has no primary key, so "
+                f"rows are appended without deduplication. Set a primary key in the "
+                f"row configuration to deduplicate."
+            )
 
     def _write_records(
         self,

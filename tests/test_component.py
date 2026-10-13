@@ -497,7 +497,7 @@ class TestPrimaryKeyResolution(unittest.TestCase):
 class TestResolvePrimaryKeys(unittest.TestCase):
     """A primary key that the data does not contain must be handled clearly."""
 
-    def _make_extractor(self, incremental=False):
+    def _make_extractor(self, incremental=False, configured_fields=None):
         return DaktelaExtractor(
             api_client=MagicMock(),
             table_configs={"flow": {"primary_keys": ["name"]}},
@@ -505,6 +505,7 @@ class TestResolvePrimaryKeys(unittest.TestCase):
             url="https://test.daktela.com",
             requested_endpoints=["flow"],
             incremental=incremental,
+            configured_fields=configured_fields,
         )
 
     def test_missing_default_key_is_dropped(self):
@@ -512,7 +513,9 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor = self._make_extractor()
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
-        extractor._resolve_primary_keys("flow.csv", table_config)
+        extractor._resolve_primary_keys(
+            "flow.csv", table_config, extractor._table_columns["flow.csv"]
+        )
         self.assertEqual(table_config["primary_keys"], [])
 
     def test_missing_user_key_raises_named_error(self):
@@ -521,14 +524,18 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": ["cdr"], "primary_key_is_default": False}
         with self.assertRaises(UserException) as ctx:
-            extractor._resolve_primary_keys("flow.csv", table_config)
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
         self.assertIn("cdr", str(ctx.exception))
 
     def test_present_key_is_untouched(self):
         extractor = self._make_extractor()
         extractor._table_columns["flow.csv"] = ["id", "name", "action"]
         table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
-        extractor._resolve_primary_keys("flow.csv", table_config)
+        extractor._resolve_primary_keys(
+            "flow.csv", table_config, extractor._table_columns["flow.csv"]
+        )
         self.assertEqual(table_config["primary_keys"], ["name"])
 
     def test_incremental_without_default_primary_key_raises(self):
@@ -537,7 +544,9 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": [], "primary_key_is_default": True}
         with self.assertRaises(UserException) as ctx:
-            extractor._resolve_primary_keys("flow.csv", table_config)
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
         self.assertIn("without deduplication", str(ctx.exception))
 
     def test_incremental_dropped_default_primary_key_raises(self):
@@ -546,7 +555,9 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
         with self.assertRaises(UserException):
-            extractor._resolve_primary_keys("flow.csv", table_config)
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
 
     def test_incremental_with_explicit_empty_primary_key_warns(self):
         """An explicit empty key is a deliberate append-only load: warn only."""
@@ -554,7 +565,9 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": [], "primary_key_is_default": False}
         with self.assertLogs(level="WARNING") as logs:
-            extractor._resolve_primary_keys("flow.csv", table_config)
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
         self.assertIn("without deduplication", logs.output[0])
 
     def test_full_load_without_primary_key_does_not_warn(self):
@@ -562,7 +575,29 @@ class TestResolvePrimaryKeys(unittest.TestCase):
         extractor._table_columns["flow.csv"] = ["id", "action", "time"]
         table_config = {"primary_keys": [], "primary_key_is_default": True}
         with self.assertNoLogs(level="WARNING"):
-            extractor._resolve_primary_keys("flow.csv", table_config)
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+
+    def test_default_key_from_prior_state_but_excluded_by_fields(self):
+        """Prior state must not mask a default key that `fields` now excludes."""
+        extractor = self._make_extractor(
+            incremental=True, configured_fields={"flow": ["title"]}
+        )
+        # Seeded columns include `name` from an earlier run; this batch has none.
+        extractor._table_columns["flow.csv"] = ["id", "name", "title"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        with self.assertRaises(UserException):
+            extractor._resolve_primary_keys("flow.csv", table_config, ["id", "title"])
+        self.assertEqual(table_config["primary_keys"], [])
+
+    def test_prior_state_key_kept_without_fields(self):
+        """Without `fields`, a key missing from a sparse first batch is kept."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "name", "title"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys("flow.csv", table_config, ["id", "title"])
+        self.assertEqual(table_config["primary_keys"], ["name"])
 
 
 if __name__ == "__main__":

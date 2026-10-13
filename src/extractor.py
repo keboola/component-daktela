@@ -209,7 +209,10 @@ class DaktelaExtractor:
         return columns
 
     def _resolve_primary_keys(
-        self, output_table_name: str, table_config: dict[str, Any]
+        self,
+        output_table_name: str,
+        table_config: dict[str, Any],
+        batch_columns: list[str],
     ) -> None:
         """
         Check the primary key against the columns this run will write.
@@ -226,12 +229,23 @@ class DaktelaExtractor:
         for one.  An explicitly empty key is a deliberate append-only load, so it
         is only logged as a warning.
 
+        A default key is checked against the current batch when ``fields`` is
+        set, because the columns seeded from prior-run state may still list a key
+        that ``fields`` now excludes, which would write it empty on every row.
+
         Args:
             output_table_name: Output table being written
             table_config: Table configuration (mutated in place)
+            batch_columns: Columns present in the current batch
         """
         primary_keys = table_config.get("primary_keys") or []
-        columns = set(self._table_columns.get(output_table_name, []))
+        fields_configured = bool(
+            self.configured_fields.get(output_table_name.removesuffix(".csv"))
+        )
+        if table_config.get("primary_key_is_default") and fields_configured:
+            columns = set(batch_columns)
+        else:
+            columns = set(self._table_columns.get(output_table_name, []))
         missing = [key for key in primary_keys if key not in columns]
 
         if missing:
@@ -291,7 +305,7 @@ class DaktelaExtractor:
                     f"Seeded {output_table_name} with {len(prior)} column(s) "
                     f"from prior run; first batch added {added} new column(s)"
                 )
-            self._resolve_primary_keys(output_table_name, table_config)
+            self._resolve_primary_keys(output_table_name, table_config, batch_columns)
         else:
             existing = set(self._table_columns[output_table_name])
             new_columns = list(

@@ -16,7 +16,7 @@ This component extracts data from Daktela API v6 endpoints and loads them into K
 
 ### Supported Endpoints
 
-- `accounts`, `activities`, `activitiesCall`, `activitiesChat`, `activitiesEmail`
+- `accounts`, `activities`, `activitiesCall`, `activitiesCallChannels`, `activitiesCallFlow`, `activitiesChat`, `activitiesEmail`
 - `campaignsRecords`, `contacts`, `crmRecords`, `groups`, `pauses`
 - `queues`, `statuses`, `templates`, `tickets`, `users`
 
@@ -107,6 +107,10 @@ Each configuration row defines one endpoint to extract:
 - **date_to**: End date for extraction (required, same formats as `date_from`)
 - **fields**: (Optional) Array of field names to extract
   - If empty or omitted, all available fields will be extracted
+  - Nested sub-fields can be selected with dot notation, such as `"user.name"` or `"call.id_call"`
+  - Dot notation keeps the output narrow. `"user"` returns the whole user object,
+    which is flattened into one column per property. `"user.name"` returns only
+    the agent login.
 
 #### Field Discovery
 
@@ -182,8 +186,16 @@ Use the **"Discover Available Fields"** sync action to see all available fields 
 The component creates one output table per endpoint:
 
 - Table name: `{endpoint}.csv` (e.g., `contacts.csv`, `tickets.csv`)
-- Primary key: `name` (or `id_call` for `activitiesCall` endpoint)
-- Incremental mode: Supported via primary key
+- Primary key: `name` by default, `id_call` for `activitiesCall`, and none for
+  `activitiesCallFlow` (that endpoint has no `name` field and the API exposes no
+  natural unique key for it).
+- To extract a table without a primary key, set `destination.primary_key` to an
+  empty list. To use your own key, list the output column names there.
+- For `activitiesCallChannels` and `activitiesCallFlow`, the parent call is returned as a nested `call` / `interaction` object and flattened into `call_*` / `interaction_*` columns. Use `fields` to limit the columns (e.g. `name,call,user,state,time_ringing,time_speaking,time_closed,cause`).
+- Incremental mode: Supported via primary key. If no key is set and the default
+  key is empty or missing from the data (for example `activitiesCallFlow`), the
+  job fails and asks for a key. An explicitly empty key appends rows without
+  deduplication and logs a warning.
 
 ## Development
 

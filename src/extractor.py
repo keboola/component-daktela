@@ -208,6 +208,77 @@ class DaktelaExtractor:
 
         return columns
 
+    def _resolve_primary_keys(
+        self,
+        output_table_name: str,
+        table_config: dict[str, Any],
+        batch_columns: list[str],
+    ) -> None:
+        """
+        Check the primary key against the columns this run will write.
+
+        Storage rejects the whole import when a primary-key column is not in the
+        table, with "Primary key column name not found in schema", which does not
+        say what to change.  A *default* key that the endpoint does not have is
+        dropped with a warning, so the endpoint still extracts.  A key the user
+        configured is their intent, so it raises an error that names the missing
+        column instead.
+
+        An incremental load that ends up with no primary key appends rows without
+        deduplication.  If the user set no key, that fails with an error asking
+        for one.  An explicitly empty key is a deliberate append-only load, so it
+        is only logged as a warning.
+
+        A default key is checked against the current batch when ``fields`` is
+        set, because the columns seeded from prior-run state may still list a key
+        that ``fields`` now excludes, which would write it empty on every row.
+
+        Args:
+            output_table_name: Output table being written
+            table_config: Table configuration (mutated in place)
+            batch_columns: Columns present in the current batch
+        """
+        primary_keys = table_config.get("primary_keys") or []
+        fields_configured = bool(
+            self.configured_fields.get(output_table_name.removesuffix(".csv"))
+        )
+        if table_config.get("primary_key_is_default") and fields_configured:
+            columns = set(batch_columns)
+        else:
+            columns = set(self._table_columns.get(output_table_name, []))
+        missing = [key for key in primary_keys if key not in columns]
+
+        if missing:
+            if not table_config.get("primary_key_is_default"):
+                raise UserException(
+                    f"Primary key column(s) {missing} are not present in the extracted "
+                    f"data for {output_table_name}. Available columns: "
+                    f"{sorted(columns)}. Change the primary key in the row "
+                    f"configuration, or add the column to the 'fields' list."
+                )
+            logging.warning(
+                f"Default primary key column(s) {missing} are not present in "
+                f"{output_table_name}; continuing without them. Set a primary key "
+                f"in the row configuration if this table needs one."
+            )
+            table_config["primary_keys"] = [
+                key for key in primary_keys if key not in missing
+            ]
+
+        if self.incremental and not table_config.get("primary_keys"):
+            if table_config.get("primary_key_is_default"):
+                raise UserException(
+                    f"Incremental load of {output_table_name} has no primary key, so "
+                    f"rows would be appended without deduplication. Set a primary key "
+                    f"in the row configuration (several columns can be combined), or "
+                    f"switch to full load."
+                )
+            logging.warning(
+                f"Incremental load of {output_table_name} has no primary key, so "
+                f"rows are appended without deduplication. Set a primary key in the "
+                f"row configuration to deduplicate."
+            )
+
     def _write_records(
         self,
         output_table_name: str,
@@ -234,6 +305,7 @@ class DaktelaExtractor:
                     f"Seeded {output_table_name} with {len(prior)} column(s) "
                     f"from prior run; first batch added {added} new column(s)"
                 )
+            self._resolve_primary_keys(output_table_name, table_config, batch_columns)
         else:
             existing = set(self._table_columns[output_table_name])
             new_columns = list(

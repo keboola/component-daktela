@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from keboola.component.exceptions import UserException  # noqa: E402
+from component import resolve_primary_keys  # noqa: E402
 from configuration import Configuration  # noqa: E402
+from daktela_client import ACTIVITIES_FILTER_FIELDS, _add_fields_params  # noqa: E402
 from extractor import DaktelaExtractor  # noqa: E402
 from transformer import DataTransformer  # noqa: E402
 
@@ -147,6 +149,26 @@ class TestMergedConfiguration(unittest.TestCase):
         self.assertEqual(config.date_from, "7 days ago")
         self.assertEqual(config.date_to, "today")
         self.assertIsNone(config.fields)
+
+
+class TestDateFilterMapping(unittest.TestCase):
+    def test_activities_call_subresource_filter_fields(self):
+        self.assertEqual(
+            ACTIVITIES_FILTER_FIELDS["activitiesCallChannels"], "time_ringing"
+        )
+        self.assertEqual(ACTIVITIES_FILTER_FIELDS["activitiesCallFlow"], "time")
+
+
+class TestFieldsParams(unittest.TestCase):
+    def test_add_fields_params(self):
+        params = {}
+        _add_fields_params(params, ["name", "user.name"])
+        self.assertEqual(params, {"fields[0]": "name", "fields[1]": "user.name"})
+
+        for fields in (None, []):
+            params = {"accessToken": "token"}
+            _add_fields_params(params, fields)
+            self.assertEqual(params, {"accessToken": "token"})
 
 
 class TestGetFieldsForEndpoint(unittest.TestCase):
@@ -348,9 +370,7 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
         extractor.component.rewrite_table_columns.assert_not_called()
         extractor.component.write_table_data.assert_called_once()
         kwargs = extractor.component.write_table_data.call_args.kwargs
-        self.assertEqual(
-            kwargs["columns"], ["id", "name", "user_name", "user_title"]
-        )
+        self.assertEqual(kwargs["columns"], ["id", "name", "user_name", "user_title"])
 
     def test_seed_unions_with_new_columns_from_first_batch(self):
         """A column that is new this run gets appended after the seeded columns."""
@@ -434,6 +454,150 @@ class TestCrossBatchColumnExtension(unittest.TestCase):
             )
         # Column list must remain unchanged so it matches the on-disk header.
         self.assertEqual(extractor._table_columns["tickets.csv"], ["id", "name"])
+
+
+class TestPrimaryKeyResolution(unittest.TestCase):
+    """The configured primary key must win over the per-endpoint default."""
+
+    def test_endpoint_defaults(self):
+        self.assertEqual(resolve_primary_keys("tickets", None), (["name"], True))
+        self.assertEqual(
+            resolve_primary_keys("activitiesCall", None), (["id_call"], True)
+        )
+        self.assertEqual(
+            resolve_primary_keys("activitiesCallChannels", None), (["name"], True)
+        )
+        # activitiesCallFlow has no "name" field, so it gets no default key.
+        self.assertEqual(resolve_primary_keys("activitiesCallFlow", None), ([], True))
+
+    def test_explicit_empty_primary_key_is_honoured(self):
+        """An explicitly empty primary_key must not fall back to the default.
+
+        Regression: ``if config.destination.primary_key:`` treated ``[]`` as
+        unset, so a user who cleared the key still got ``name`` and the job
+        failed with "Primary key column name not found in schema".
+        """
+        self.assertEqual(resolve_primary_keys("activitiesCallFlow", []), ([], False))
+        self.assertEqual(resolve_primary_keys("tickets", []), ([], False))
+
+    def test_configured_primary_key_wins(self):
+        self.assertEqual(
+            resolve_primary_keys("activitiesCall", ["cdr", "time"]),
+            (["cdr", "time"], False),
+        )
+
+    def test_empty_list_survives_the_configuration_model(self):
+        """Pydantic must keep [] distinct from None on the way in."""
+        from configuration import Destination
+
+        self.assertEqual(Destination(primary_key=[]).primary_key, [])
+        self.assertIsNone(Destination().primary_key)
+
+
+class TestResolvePrimaryKeys(unittest.TestCase):
+    """A primary key that the data does not contain must be handled clearly."""
+
+    def _make_extractor(self, incremental=False, configured_fields=None):
+        return DaktelaExtractor(
+            api_client=MagicMock(),
+            table_configs={"flow": {"primary_keys": ["name"]}},
+            component=MagicMock(),
+            url="https://test.daktela.com",
+            requested_endpoints=["flow"],
+            incremental=incremental,
+            configured_fields=configured_fields,
+        )
+
+    def test_missing_default_key_is_dropped(self):
+        """A default key the endpoint does not have must not fail the job."""
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys(
+            "flow.csv", table_config, extractor._table_columns["flow.csv"]
+        )
+        self.assertEqual(table_config["primary_keys"], [])
+
+    def test_missing_user_key_raises_named_error(self):
+        """A key the user chose must fail with an error that names the column."""
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["cdr"], "primary_key_is_default": False}
+        with self.assertRaises(UserException) as ctx:
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+        self.assertIn("cdr", str(ctx.exception))
+
+    def test_present_key_is_untouched(self):
+        extractor = self._make_extractor()
+        extractor._table_columns["flow.csv"] = ["id", "name", "action"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys(
+            "flow.csv", table_config, extractor._table_columns["flow.csv"]
+        )
+        self.assertEqual(table_config["primary_keys"], ["name"])
+
+    def test_incremental_without_default_primary_key_raises(self):
+        """No key set by the user: incremental would append duplicates, so fail."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": True}
+        with self.assertRaises(UserException) as ctx:
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+        self.assertIn("without deduplication", str(ctx.exception))
+
+    def test_incremental_dropped_default_primary_key_raises(self):
+        """A default key dropped as missing must not leave incremental keyless."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        with self.assertRaises(UserException):
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+
+    def test_incremental_with_explicit_empty_primary_key_warns(self):
+        """An explicit empty key is a deliberate append-only load: warn only."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": False}
+        with self.assertLogs(level="WARNING") as logs:
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+        self.assertIn("without deduplication", logs.output[0])
+
+    def test_full_load_without_primary_key_does_not_warn(self):
+        extractor = self._make_extractor(incremental=False)
+        extractor._table_columns["flow.csv"] = ["id", "action", "time"]
+        table_config = {"primary_keys": [], "primary_key_is_default": True}
+        with self.assertNoLogs(level="WARNING"):
+            extractor._resolve_primary_keys(
+                "flow.csv", table_config, extractor._table_columns["flow.csv"]
+            )
+
+    def test_default_key_from_prior_state_but_excluded_by_fields(self):
+        """Prior state must not mask a default key that `fields` now excludes."""
+        extractor = self._make_extractor(
+            incremental=True, configured_fields={"flow": ["title"]}
+        )
+        # Seeded columns include `name` from an earlier run; this batch has none.
+        extractor._table_columns["flow.csv"] = ["id", "name", "title"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        with self.assertRaises(UserException):
+            extractor._resolve_primary_keys("flow.csv", table_config, ["id", "title"])
+        self.assertEqual(table_config["primary_keys"], [])
+
+    def test_prior_state_key_kept_without_fields(self):
+        """Without `fields`, a key missing from a sparse first batch is kept."""
+        extractor = self._make_extractor(incremental=True)
+        extractor._table_columns["flow.csv"] = ["id", "name", "title"]
+        table_config = {"primary_keys": ["name"], "primary_key_is_default": True}
+        extractor._resolve_primary_keys("flow.csv", table_config, ["id", "title"])
+        self.assertEqual(table_config["primary_keys"], ["name"])
 
 
 if __name__ == "__main__":
